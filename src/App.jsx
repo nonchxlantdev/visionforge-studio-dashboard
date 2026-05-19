@@ -318,6 +318,31 @@ export default function App() {
     setModal(null);
   }
 
+  function updateProject(projectId, form, files) {
+    const existingProject = state.projects.find(item => item.id === projectId);
+    if (!existingProject) return;
+
+    const newAttachments = files.map(file => ({ name: file.name, size: file.size, type: file.type || "File" }));
+    const project = {
+      ...existingProject,
+      name: form.get("name").trim(),
+      description: form.get("description").trim(),
+      startDate: form.get("startDate"),
+      deadline: form.get("deadline"),
+      status: form.get("status"),
+      attachments: [...(existingProject.attachments || []), ...newAttachments],
+    };
+
+    patch(current => ({
+      ...current,
+      projects: current.projects.map(item => item.id === projectId ? project : item),
+      activeProjectId: project.id,
+      activeProjectStatus: project.status || "active",
+    }));
+    addUpdate("Project updated", `${project.name} was updated.`, "project", project.id, project.deadline);
+    setModal({ type: "project", id: project.id });
+  }
+
   function createTask(form) {
     const task = {
       id: createId(),
@@ -339,6 +364,31 @@ export default function App() {
     }));
     addUpdate("Task created", `${task.title} was added to ${helpers.getProject(task.projectId)?.name || "a project"}.`, "task", task.id, task.deadline);
     setModal(null);
+    setModal({ type: "task", id: task.id });
+  }
+
+  function updateTask(taskId, form) {
+    const existingTask = state.tasks.find(item => item.id === taskId);
+    if (!existingTask) return;
+
+    const task = {
+      ...existingTask,
+      projectId: form.get("projectId"),
+      title: form.get("title").trim(),
+      type: form.get("type").trim(),
+      description: form.get("description").trim(),
+      status: form.get("status"),
+      priority: form.get("priority"),
+      deadline: form.get("deadline"),
+      assignees: form.getAll("assignees"),
+    };
+
+    patch(current => ({
+      ...current,
+      tasks: current.tasks.map(item => item.id === taskId ? task : item),
+      activeProjectId: task.projectId,
+    }));
+    addUpdate("Task updated", `${task.title} was updated.`, "task", task.id, task.deadline);
     setModal({ type: "task", id: task.id });
   }
 
@@ -568,12 +618,14 @@ export default function App() {
       </section>
       <Modal modal={modal} state={state} helpers={helpers} onClose={() => setModal(null)}>
         {modal?.type === "new-project" && <ProjectForm onSubmit={createProject} />}
+        {modal?.type === "edit-project" && <ProjectForm project={state.projects.find(item => item.id === modal.id)} onSubmit={(form, files) => updateProject(modal.id, form, files)} />}
         {modal?.type === "new-task" && <TaskForm state={state} onSubmit={createTask} />}
+        {modal?.type === "edit-task" && <TaskForm state={state} task={state.tasks.find(item => item.id === modal.id)} onSubmit={form => updateTask(modal.id, form)} />}
         {modal?.type === "new-user" && <UserForm state={state} onSubmit={createUser} />}
         {modal?.type === "edit-user" && <UserForm state={state} user={state.users.find(item => item.id === modal.id)} onSubmit={(form, photo) => updateUser(modal.id, form, photo)} />}
         {modal?.type === "user-detail" && <UserDetail user={state.users.find(item => item.id === modal.id)} state={state} setModal={setModal} resetUserPassword={resetUserPassword} deleteUser={deleteUser} />}
         {modal?.type === "new-group" && <GroupForm state={state} onSubmit={createGroup} />}
-        {modal?.type === "task" && <TaskDetail taskId={modal.id} state={state} helpers={helpers} addComment={addComment} />}
+        {modal?.type === "task" && <TaskDetail taskId={modal.id} state={state} helpers={helpers} addComment={addComment} setModal={setModal} />}
         {modal?.type === "project" && <ProjectDetail projectId={modal.id} state={state} helpers={helpers} updateProjectStatus={updateProjectStatus} openTask={openTask} setModal={setModal} />}
       </Modal>
     </section>
@@ -1083,38 +1135,38 @@ function Modal({ modal, children, onClose }) {
   );
 }
 
-function ProjectForm({ onSubmit }) {
+function ProjectForm({ project, onSubmit }) {
   return (
     <>
-      <ModalHeader title="Add project" />
+      <ModalHeader title={project ? "Edit project" : "Add project"} />
       <form onSubmit={event => { event.preventDefault(); onSubmit(new FormData(event.currentTarget), [...event.currentTarget.attachments.files]); }}>
-        <Field label="Name"><input name="name" required placeholder="New client portal" /></Field>
-        <Field label="Description"><textarea name="description" required placeholder="What this project is responsible for" /></Field>
+        <Field label="Name"><input name="name" required defaultValue={project?.name || ""} placeholder="New client portal" /></Field>
+        <Field label="Description"><textarea name="description" required defaultValue={project?.description || ""} placeholder="What this project is responsible for" /></Field>
         <Field label="Attachments"><input name="attachments" type="file" multiple /></Field>
-        <p className="login-note">The demo records selected file names. Supabase Storage will handle real uploads when the backend is connected.</p>
-        <Field label="Start date"><input name="startDate" type="date" required /></Field>
-        <Field label="Deadline"><input name="deadline" type="date" required /></Field>
-        <Field label="Project status"><select name="status">{projectStatuses.map(status => <option key={status.id} value={status.id}>{status.label}</option>)}</select></Field>
-        <div className="modal-actions"><button className="primary-btn" type="submit">Create project</button></div>
+        <p className="login-note">{project ? `Existing files: ${attachmentNames(project.attachments) || "none"}. New uploads will be added to the project.` : "The demo records selected file names. Supabase Storage will handle real uploads when the backend is connected."}</p>
+        <Field label="Start date"><input name="startDate" type="date" required defaultValue={project?.startDate || ""} /></Field>
+        <Field label="Deadline"><input name="deadline" type="date" required defaultValue={project?.deadline || ""} /></Field>
+        <Field label="Project status"><select name="status" defaultValue={project?.status || "active"}>{projectStatuses.map(status => <option key={status.id} value={status.id}>{status.label}</option>)}</select></Field>
+        <div className="modal-actions"><button className="primary-btn" type="submit">{project ? "Save project" : "Create project"}</button></div>
       </form>
     </>
   );
 }
 
-function TaskForm({ state, onSubmit }) {
+function TaskForm({ state, task, onSubmit }) {
   return (
     <>
-      <ModalHeader title="Create task" />
+      <ModalHeader title={task ? "Edit task" : "Create task"} />
       <form onSubmit={event => { event.preventDefault(); onSubmit(new FormData(event.currentTarget)); }}>
-        <Field label="Task name"><input name="title" required placeholder="Create onboarding checklist" /></Field>
-        <Field label="Task type"><input name="type" required placeholder="Design, backend, review, content" /></Field>
-        <Field label="Description"><textarea name="description" required placeholder="What needs to be done" /></Field>
-        <Field label="Project"><select name="projectId">{state.projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></Field>
-        <Field label="Assignees"><select name="assignees" multiple>{state.users.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}</select></Field>
-        <Field label="Status"><select name="status">{statuses.map(status => <option key={status.id} value={status.id}>{status.label}</option>)}</select></Field>
-        <Field label="Priority"><select name="priority"><option>Medium</option><option>High</option><option>Low</option></select></Field>
-        <Field label="Deadline"><input name="deadline" type="date" required /></Field>
-        <div className="modal-actions"><button className="primary-btn" type="submit">Create task</button></div>
+        <Field label="Task name"><input name="title" required defaultValue={task?.title || ""} placeholder="Create onboarding checklist" /></Field>
+        <Field label="Task type"><input name="type" required defaultValue={task?.type || ""} placeholder="Design, backend, review, content" /></Field>
+        <Field label="Description"><textarea name="description" required defaultValue={task?.description || ""} placeholder="What needs to be done" /></Field>
+        <Field label="Project"><select name="projectId" defaultValue={task?.projectId || state.activeProjectId || state.projects[0]?.id}>{state.projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></Field>
+        <Field label="Assignees"><select name="assignees" multiple defaultValue={task?.assignees || []}>{state.users.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}</select></Field>
+        <Field label="Status"><select name="status" defaultValue={task?.status || "not-started"}>{statuses.map(status => <option key={status.id} value={status.id}>{status.label}</option>)}</select></Field>
+        <Field label="Priority"><select name="priority" defaultValue={task?.priority || "Medium"}><option>Medium</option><option>High</option><option>Low</option></select></Field>
+        <Field label="Deadline"><input name="deadline" type="date" required defaultValue={task?.deadline || ""} /></Field>
+        <div className="modal-actions"><button className="primary-btn" type="submit">{task ? "Save task" : "Create task"}</button></div>
       </form>
     </>
   );
@@ -1175,7 +1227,7 @@ function GroupForm({ state, onSubmit }) {
   );
 }
 
-function TaskDetail({ taskId, state, helpers, addComment }) {
+function TaskDetail({ taskId, state, helpers, addComment, setModal }) {
   const task = state.tasks.find(item => item.id === taskId);
   const [text, setText] = useState("");
   const [mentionOpen, setMentionOpen] = useState(false);
@@ -1185,6 +1237,9 @@ function TaskDetail({ taskId, state, helpers, addComment }) {
   return (
     <>
       <ModalHeader title={task.title} eyebrow={project?.name || "Project"} />
+      <div className="modal-actions compact-actions">
+        <button className="ghost-btn" type="button" onClick={() => setModal({ type: "edit-task", id: task.id })}>Edit task</button>
+      </div>
       <div className="task-detail-grid">
         <div className="detail-meta">
           <span>{statusLabel(task.status)}</span>
@@ -1225,6 +1280,9 @@ function ProjectDetail({ projectId, state, helpers, updateProjectStatus, openTas
   return (
     <>
       <ModalHeader title={project.name} eyebrow={projectStatusLabel(project.status)} />
+      <div className="modal-actions compact-actions">
+        <button className="ghost-btn" type="button" onClick={() => setModal({ type: "edit-project", id: project.id })}>Edit project</button>
+      </div>
       <p className="subtle">{project.description}</p>
       <div className="timeline" style={{ marginTop: 16 }}>
         <div className="timeline-item"><strong>Schedule</strong><span className="muted-small">Start {formatDate(project.startDate)} / Deadline {formatDate(project.deadline)}</span></div>

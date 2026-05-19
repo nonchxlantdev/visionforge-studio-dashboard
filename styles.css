@@ -1844,6 +1844,11 @@ button:disabled {
   margin-top: 20px;
 }
 
+.modal-actions.compact-actions {
+  margin-top: 0;
+  margin-bottom: 14px;
+}
+
 .modal-actions .primary-btn {
   width: auto;
   margin: 0;
