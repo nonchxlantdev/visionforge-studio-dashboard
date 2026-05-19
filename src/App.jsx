@@ -543,9 +543,37 @@ export default function App() {
     setModal(null);
   }
 
-  function updateUser(userId, form, photo = "") {
+  async function updateUser(userId, form, photo = "") {
     const displayName = form.get("displayName").trim() || form.get("name").trim();
     const legalName = form.get("legalName").trim() || displayName;
+    const existingUser = state.users.find(user => user.id === userId);
+    const password = form.get("password");
+
+    if (isSupabaseConfigured && supabase) {
+      const { error } = await supabase.functions.invoke("admin-update-user", {
+        body: {
+          userId,
+          email: form.get("email").trim(),
+          password: password || undefined,
+          legalName,
+          displayName,
+          phone: form.get("phone").trim(),
+          workPhone: form.get("workPhone").trim(),
+          gender: form.get("gender"),
+          dob: form.get("dob") || null,
+          homeAddress: form.get("homeAddress").trim(),
+          photoUrl: photo || existingUser?.photo || "",
+          role: form.get("role"),
+          status: form.get("status"),
+          groupIds: form.getAll("groups"),
+        },
+      });
+      if (error) {
+        alert(`Supabase user update failed: ${await getSupabaseFunctionErrorMessage(error)}`);
+        return;
+      }
+    }
+
     patch(current => ({
       ...current,
       users: current.users.map(user => user.id === userId ? {
@@ -1234,7 +1262,9 @@ function UserForm({ state, user, onSubmit }) {
         <input name="name" type="hidden" defaultValue={user?.displayName || user?.name || ""} />
         <Field label="Title"><input name="title" defaultValue={user?.title || ""} placeholder="CEO, Designer, Developer" /></Field>
         <Field label="Email"><input name="email" type="email" defaultValue={user?.email || ""} required placeholder="name@visionforge.studio" /></Field>
-        {!user ? <Field className="password-field" label="Temporary password"><input name="password" type="password" required minLength="6" placeholder="Set their first password" /></Field> : null}
+        <Field className="password-field" label={user ? "New password" : "Temporary password"}>
+          <input name="password" type="password" required={!user} minLength="6" placeholder={user ? "Leave blank to keep current password" : "Set their first password"} />
+        </Field>
         <Field label="Phone"><input name="phone" defaultValue={user?.phone || ""} placeholder="Personal phone" /></Field>
         <Field label="Work Phone"><input name="workPhone" defaultValue={user?.workPhone || ""} placeholder="Work phone" /></Field>
         <Field label="Gender"><select name="gender" defaultValue={user?.gender || ""}><option value="">Select</option><option>Male</option><option>Female</option><option>Non-binary</option><option>Prefer not to say</option></select></Field>

@@ -49,6 +49,7 @@ Deploy it from the project root with the Supabase CLI:
 
 ```bash
 supabase functions deploy admin-create-user --project-ref ngifdiwhzqrigdlxwoua
+supabase functions deploy admin-update-user --project-ref ngifdiwhzqrigdlxwoua
 supabase functions deploy admin-delete-user --project-ref ngifdiwhzqrigdlxwoua
 ```
 
