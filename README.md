@@ -39,4 +39,4 @@ For a real hosted collaboration app, yes, Supabase is the right next integration
 - Supabase Storage for attachments.
 - Realtime channels for live project updates, inbox alerts, and notifications.
 
-GitHub Pages can host this as a frontend, but the production version will need Supabase environment keys and database policies before real private collaboration is safe.
+GitHub Pages can host this as a frontend, but the production version will need Supabase database policies before real private collaboration is safe.
