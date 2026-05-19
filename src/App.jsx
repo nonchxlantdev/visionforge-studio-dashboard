@@ -1234,7 +1234,7 @@ function UserForm({ state, user, onSubmit }) {
         <input name="name" type="hidden" defaultValue={user?.displayName || user?.name || ""} />
         <Field label="Title"><input name="title" defaultValue={user?.title || ""} placeholder="CEO, Designer, Developer" /></Field>
         <Field label="Email"><input name="email" type="email" defaultValue={user?.email || ""} required placeholder="name@visionforge.studio" /></Field>
-        {!user ? <Field label="Create Password"><input name="password" type="password" required minLength="6" placeholder="Temporary password" /></Field> : null}
+        {!user ? <Field className="password-field" label="Temporary password"><input name="password" type="password" required minLength="6" placeholder="Set their first password" /></Field> : null}
         <Field label="Phone"><input name="phone" defaultValue={user?.phone || ""} placeholder="Personal phone" /></Field>
         <Field label="Work Phone"><input name="workPhone" defaultValue={user?.workPhone || ""} placeholder="Work phone" /></Field>
         <Field label="Gender"><select name="gender" defaultValue={user?.gender || ""}><option value="">Select</option><option>Male</option><option>Female</option><option>Non-binary</option><option>Prefer not to say</option></select></Field>
@@ -1425,8 +1425,8 @@ function ModalHeader({ title, eyebrow }) {
   );
 }
 
-function Field({ label, children }) {
-  return <div className="field"><label>{label}</label>{children}</div>;
+function Field({ label, children, className = "" }) {
+  return <div className={`field ${className}`.trim()}><label>{label}</label>{children}</div>;
 }
 
 function Comment({ comment }) {

@@ -1185,6 +1185,7 @@ button:disabled {
 }
 
 .photo-uploader,
+.password-field,
 .role-preview,
 .user-form-grid .modal-actions {
   grid-column: 1 / -1;
