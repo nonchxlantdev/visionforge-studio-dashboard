@@ -85,6 +85,7 @@ const initialState = {
   messages: [],
   notifications: [],
   updates: [],
+  onlineUsers: [],
 };
 
 function createId() {
@@ -108,6 +109,7 @@ function loadState() {
       notifications: parsed.notifications || [],
       updates: parsed.updates || [],
       messages: parsed.messages || [],
+      onlineUsers: [],
     };
   } catch {
     return initialState;
@@ -119,9 +121,10 @@ export default function App() {
   const [modal, setModal] = useState(null);
   const [authMessage, setAuthMessage] = useState("");
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
+  const workspaceChannelRef = useRef(null);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, notificationOpen: false, movingTaskId: "" }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, notificationOpen: false, movingTaskId: "", onlineUsers: [] }));
   }, [state]);
 
   const helpers = useMemo(() => createHelpers(state), [state]);
@@ -154,6 +157,63 @@ export default function App() {
       listener.subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase || !state.loggedIn || !state.user?.id) {
+      return undefined;
+    }
+
+    const currentUser = normalizeUser(state.user);
+    const channel = supabase.channel("workspace-live", {
+      config: {
+        presence: {
+          key: currentUser.id,
+        },
+      },
+    });
+    workspaceChannelRef.current = channel;
+
+    channel
+      .on("presence", { event: "sync" }, () => {
+        const presenceState = channel.presenceState();
+        const onlineUsers = Object.values(presenceState)
+          .flat()
+          .map(meta => meta.user)
+          .filter(Boolean);
+        patch({ onlineUsers });
+      })
+      .on("broadcast", { event: "workspace-update" }, async ({ payload }) => {
+        if (payload?.actorId === currentUser.id) return;
+        const workspace = await loadSupabaseWorkspace();
+        patch(current => ({
+          ...current,
+          projects: workspace.loaded ? workspace.projects : current.projects,
+          tasks: workspace.loaded ? workspace.tasks : current.tasks,
+          users: workspace.users.length ? workspace.users : current.users,
+          groups: workspace.loaded && workspace.groups.length ? workspace.groups : current.groups,
+          updates: payload?.update ? [payload.update, ...current.updates] : current.updates,
+          notifications: payload?.update ? [payload.update, ...current.notifications] : current.notifications,
+        }));
+      })
+      .subscribe(status => {
+        if (status === "SUBSCRIBED") {
+          channel.track({
+            user: {
+              id: currentUser.id,
+              name: currentUser.displayName || currentUser.name,
+              initials: currentUser.initials,
+              role: currentUser.role,
+            },
+            onlineAt: new Date().toISOString(),
+          });
+        }
+      });
+
+    return () => {
+      workspaceChannelRef.current = null;
+      supabase.removeChannel(channel);
+    };
+  }, [state.loggedIn, state.user?.id]);
 
   function patch(updater) {
     setState(current => {
@@ -248,21 +308,32 @@ export default function App() {
 
   function addUpdate(title, detail, targetType = "", targetId = "", dateValue = new Date()) {
     const date = normalizeDate(dateValue);
+    const actor = normalizeUser(state.user || ownerUser);
     const update = {
       id: createId(),
       title,
-      detail,
+      detail: `${actor.displayName || actor.name}: ${detail}`,
       date,
       time: date === normalizeDate(new Date()) ? "Today" : formatDate(date),
       read: false,
       targetType,
       targetId,
+      actorId: actor.id,
+      actorName: actor.displayName || actor.name,
     };
     patch(current => ({
       ...current,
       updates: [update, ...current.updates],
       notifications: [update, ...current.notifications],
     }));
+    workspaceChannelRef.current?.send({
+      type: "broadcast",
+      event: "workspace-update",
+      payload: {
+        actorId: actor.id,
+        update,
+      },
+    });
   }
 
   function openTask(taskId) {
@@ -293,9 +364,19 @@ export default function App() {
     if (notification.targetType === "admin") patch({ activeView: "admin" });
   }
 
-  function moveTask(taskId, status) {
+  async function moveTask(taskId, status) {
     const task = state.tasks.find(item => item.id === taskId);
     if (!task || task.status === "completed" || task.status === status) return;
+    const updatedTask = { ...task, status };
+
+    if (isSupabaseConfigured && supabase) {
+      const error = await saveSupabaseTask(updatedTask, state.user.id);
+      if (error) {
+        alert(`Task status save failed: ${error.message}`);
+        return;
+      }
+    }
+
     setState(current => ({
       ...current,
       tasks: current.tasks.map(item => item.id === taskId ? { ...item, status } : item),
@@ -622,8 +703,19 @@ export default function App() {
     setModal(null);
   }
 
-  function updateProjectStatus(projectId, status) {
+  async function updateProjectStatus(projectId, status) {
     const project = state.projects.find(item => item.id === projectId);
+    if (!project) return;
+    const updatedProject = { ...project, status };
+
+    if (isSupabaseConfigured && supabase) {
+      const error = await saveSupabaseProject(updatedProject, state.user.id);
+      if (error) {
+        alert(`Project status save failed: ${error.message}`);
+        return;
+      }
+    }
+
     patch(current => ({
       ...current,
       projects: current.projects.map(item => item.id === projectId ? { ...item, status } : item),
@@ -783,6 +875,12 @@ function Sidebar({ state, patch }) {
 function Topbar({ state, patch, openProjectModal, openTaskModal, onNotificationClick, onLogout }) {
   const unread = state.notifications.filter(item => !item.read);
   const currentUser = normalizeUser(state.user || ownerUser);
+  const onlineUsers = state.onlineUsers?.length ? state.onlineUsers : state.loggedIn ? [{
+    id: currentUser.id,
+    name: currentUser.displayName || currentUser.name,
+    initials: currentUser.initials,
+    role: currentUser.role,
+  }] : [];
   const title = {
     admin: "Users & Permissions",
     dashboard: "Dashboard",
@@ -798,7 +896,9 @@ function Topbar({ state, patch, openProjectModal, openTaskModal, onNotificationC
       </div>
       <div className="topbar-actions">
         <div className="avatar-stack">
-          {state.loggedIn ? <span className="mini-avatar online" title={`${currentUser.displayName || currentUser.name} is logged in`}>{currentUser.initials}</span> : null}
+          {onlineUsers.map(user => (
+            <span className="mini-avatar online" title={`${user.name} is logged in${user.role ? ` as ${user.role}` : ""}`} key={user.id}>{user.initials || initialsFromName(user.name)}</span>
+          ))}
         </div>
         <div className="notification-wrap">
           <button
