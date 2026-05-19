@@ -95,6 +95,7 @@ alter table public.notifications enable row level security;
 
 -- Development-friendly policies. Tighten these before production launch.
 create policy "authenticated can read profiles" on public.profiles for select to authenticated using (true);
+create policy "users can insert their profile" on public.profiles for insert to authenticated with check (auth.uid() = id);
 create policy "users can update their profile" on public.profiles for update to authenticated using (auth.uid() = id);
 
 create policy "authenticated can manage groups" on public.groups for all to authenticated using (true) with check (true);
@@ -105,4 +106,3 @@ create policy "authenticated can manage assignees" on public.task_assignees for 
 create policy "authenticated can manage comments" on public.comments for all to authenticated using (true) with check (true);
 create policy "users can read their notifications" on public.notifications for select to authenticated using (profile_id = auth.uid());
 create policy "users can update their notifications" on public.notifications for update to authenticated using (profile_id = auth.uid());
-

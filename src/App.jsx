@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import ElectricBorder from "./ElectricBorder.jsx";
 import logoUrl from "../assets/vision-forge-logo.png";
-import { isSupabaseConfigured } from "./lib/supabase.js";
+import { isSupabaseConfigured, supabase } from "./lib/supabase.js";
 
 const STORAGE_KEY = "vision-forge-react-dashboard-v1";
 
@@ -28,6 +28,7 @@ const roles = {
 
 const today = new Date();
 const CloseModalContext = createContext(() => {});
+const ownerEmail = "glenrickmspain@hotmail.com";
 
 const initialState = {
   loggedIn: false,
@@ -43,7 +44,7 @@ const initialState = {
     legalName: "Glenrick Spain",
     displayName: "Glenrick Spain",
     title: "CEO",
-    email: "glenrick@visionforge.studio",
+    email: ownerEmail,
     phone: "",
     workPhone: "",
     gender: "",
@@ -63,7 +64,7 @@ const initialState = {
       legalName: "Glenrick Spain",
       displayName: "Glenrick Spain",
       title: "CEO",
-      email: "glenrick@visionforge.studio",
+      email: ownerEmail,
       phone: "",
       workPhone: "",
       gender: "",
@@ -123,6 +124,8 @@ function loadState() {
 export default function App() {
   const [state, setState] = useState(loadState);
   const [modal, setModal] = useState(null);
+  const [authMessage, setAuthMessage] = useState("");
+  const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, notificationOpen: false, movingTaskId: "" }));
@@ -130,11 +133,118 @@ export default function App() {
 
   const helpers = useMemo(() => createHelpers(state), [state]);
 
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) {
+      setAuthLoading(false);
+      return undefined;
+    }
+
+    let mounted = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
+      if (data.session?.user) {
+        syncSupabaseUser(data.session.user);
+      }
+      setAuthLoading(false);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        syncSupabaseUser(session.user);
+      } else {
+        patch({ loggedIn: false });
+      }
+    });
+
+    return () => {
+      mounted = false;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
   function patch(updater) {
     setState(current => {
       const next = typeof updater === "function" ? updater(current) : { ...current, ...updater };
       return next;
     });
+  }
+
+  async function syncSupabaseUser(authUser) {
+    const appUser = await upsertSupabaseProfile(authUser);
+    patch(current => ({
+      ...current,
+      loggedIn: true,
+      user: appUser,
+      users: current.users.some(user => user.id === appUser.id)
+        ? current.users.map(user => user.id === appUser.id ? { ...user, ...appUser } : user)
+        : [appUser, ...current.users.filter(user => user.email !== appUser.email)],
+    }));
+  }
+
+  async function handleEmailLogin({ email, password }) {
+    setAuthMessage("");
+    if (!isSupabaseConfigured || !supabase) {
+      patch({ loggedIn: true });
+      return;
+    }
+    if (!email || !password) {
+      setAuthMessage("Enter your email and password.");
+      return;
+    }
+    setAuthLoading(true);
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    setAuthLoading(false);
+    if (error) setAuthMessage(error.message);
+  }
+
+  async function handleEmailSignup({ email, password }) {
+    setAuthMessage("");
+    if (!isSupabaseConfigured || !supabase) {
+      patch({ loggedIn: true });
+      return;
+    }
+    if (!email || !password) {
+      setAuthMessage("Enter your email and password.");
+      return;
+    }
+    setAuthLoading(true);
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          legal_name: "Glenrick Spain",
+          display_name: "Glenrick Spain",
+          role: email.toLowerCase() === ownerEmail ? "Admin" : "User",
+        },
+      },
+    });
+    setAuthLoading(false);
+    if (error) {
+      setAuthMessage(error.message);
+    } else {
+      setAuthMessage("Account created. Check your email if Supabase requires confirmation, then sign in.");
+    }
+  }
+
+  async function handleGoogleLogin() {
+    setAuthMessage("");
+    if (!isSupabaseConfigured || !supabase) return;
+    const redirectTo = window.location.origin === "null"
+      ? "https://nonchxlantdev.github.io/visionforge-studio-dashboard/"
+      : window.location.href;
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo },
+    });
+    if (error) setAuthMessage(error.message);
+  }
+
+  async function handleLogout() {
+    if (isSupabaseConfigured && supabase) {
+      await supabase.auth.signOut();
+    }
+    patch({ loggedIn: false, notificationOpen: false });
   }
 
   function addUpdate(title, detail, targetType = "", targetId = "", dateValue = new Date()) {
@@ -346,7 +456,16 @@ export default function App() {
   }
 
   if (!state.loggedIn) {
-    return <Login onLogin={() => patch({ loggedIn: true })} email={state.user.email} />;
+    return (
+      <Login
+        onLogin={handleEmailLogin}
+        onSignup={handleEmailSignup}
+        onGoogle={handleGoogleLogin}
+        email={ownerEmail}
+        message={authMessage}
+        loading={authLoading}
+      />
+    );
   }
 
   return (
@@ -359,6 +478,7 @@ export default function App() {
           openProjectModal={() => setModal({ type: "new-project" })}
           openTaskModal={() => state.projects.length ? setModal({ type: "new-task" }) : setModal({ type: "new-project" })}
           onNotificationClick={handleNotificationClick}
+          onLogout={handleLogout}
         />
         {state.activeView === "admin" && <AdminView state={state} setModal={setModal} />}
         {state.activeView === "projects" && <ProjectTasksView state={state} helpers={helpers} patch={patch} setModal={setModal} openTask={openTask} openProject={openProject} />}
@@ -388,7 +508,9 @@ export default function App() {
   );
 }
 
-function Login({ onLogin, email }) {
+function Login({ onLogin, onSignup, onGoogle, email, message, loading }) {
+  const [loginEmail, setLoginEmail] = useState(email);
+  const [password, setPassword] = useState("");
   return (
     <section className="login-shell">
       <div className="login-brand">
@@ -407,20 +529,25 @@ function Login({ onLogin, email }) {
         </div>
       </div>
       <div className="login-panel">
-        <form className="login-card" onSubmit={event => { event.preventDefault(); onLogin(); }}>
+        <form className="login-card" onSubmit={event => { event.preventDefault(); onLogin({ email: loginEmail, password }); }}>
           <span className="eyebrow">Private admin portal</span>
           <h2>Welcome to Vision Forge Studio</h2>
-          <p className="subtle">Sign in to manage projects, tasks, teams, comments, files, deadlines, and notifications.</p>
+          <p className="subtle">Sign in with your email and password, or continue with Google once it is enabled in Supabase Auth.</p>
           <div className="field">
             <label htmlFor="email">Email</label>
-            <input id="email" type="email" defaultValue={email} />
+            <input id="email" type="email" value={loginEmail} onChange={event => setLoginEmail(event.target.value)} />
           </div>
           <div className="field">
             <label htmlFor="password">Password</label>
-            <input id="password" type="password" defaultValue="visionforge-admin" />
+            <input id="password" type="password" value={password} onChange={event => setPassword(event.target.value)} placeholder="Enter password" />
           </div>
-          <button className="primary-btn" type="submit">Enter dashboard</button>
-          <p className="login-note">Production login should use Supabase Auth with row-level security, project memberships, groups, and storage permissions.</p>
+          {message ? <p className="auth-message">{message}</p> : null}
+          <button className="primary-btn" type="submit" disabled={loading}>{loading ? "Signing in..." : "Sign in"}</button>
+          <div className="login-actions-row">
+            <button className="ghost-btn" type="button" onClick={() => onSignup({ email: loginEmail, password })} disabled={loading}>Create account</button>
+            <button className="ghost-btn" type="button" onClick={onGoogle} disabled={loading || !isSupabaseConfigured}>Continue with Google</button>
+          </div>
+          <p className="login-note">Supabase Auth is active when the connection pill says Supabase connected. Google also needs to be enabled in your Supabase Auth provider settings.</p>
         </form>
       </div>
     </section>
@@ -460,7 +587,7 @@ function Sidebar({ state, patch }) {
   );
 }
 
-function Topbar({ state, patch, openProjectModal, openTaskModal, onNotificationClick }) {
+function Topbar({ state, patch, openProjectModal, openTaskModal, onNotificationClick, onLogout }) {
   const unread = state.notifications.filter(item => !item.read);
   const title = {
     admin: "Users & Permissions",
@@ -497,7 +624,7 @@ function Topbar({ state, patch, openProjectModal, openTaskModal, onNotificationC
         </div>
         <button className="tool-btn" onClick={openProjectModal}>+ Add Project</button>
         <button className="tool-btn" disabled={!state.projects.length} onClick={openTaskModal}>+ Create task</button>
-        <button className="ghost-btn" onClick={() => patch({ loggedIn: false, notificationOpen: false })}>Logout</button>
+        <button className="ghost-btn" onClick={onLogout}>Logout</button>
       </div>
     </header>
   );
@@ -1145,6 +1272,81 @@ function createHelpers(state) {
     return project && !["completed", "closed", "cancelled"].includes(project.status || "active");
   });
   return { getProject, getUser, dashboardProjects, visibleTasks };
+}
+
+async function upsertSupabaseProfile(authUser) {
+  const metadata = authUser.user_metadata || {};
+  const email = authUser.email || "";
+  const displayName = metadata.display_name || metadata.full_name || (email === ownerEmail ? "Glenrick Spain" : email.split("@")[0]);
+  const legalName = metadata.legal_name || displayName;
+  const role = email.toLowerCase() === ownerEmail ? "Admin" : metadata.role || "User";
+  const payload = {
+    id: authUser.id,
+    legal_name: legalName,
+    display_name: displayName,
+    email,
+    role,
+    status: "Active",
+    last_login_at: new Date().toISOString(),
+  };
+
+  if (supabase) {
+    const { data, error } = await supabase
+      .from("profiles")
+      .upsert(payload, { onConflict: "id" })
+      .select()
+      .single();
+
+    if (!error && data) {
+      return profileRowToUser(data);
+    }
+    console.warn("Supabase profile upsert failed:", error?.message);
+  }
+
+  return {
+    id: authUser.id,
+    name: displayName,
+    legalName,
+    displayName,
+    title: role === "Admin" ? "CEO" : "Team member",
+    email,
+    phone: "",
+    workPhone: "",
+    gender: "",
+    dob: "",
+    homeAddress: "",
+    photo: metadata.avatar_url || "",
+    status: "Active",
+    lastLogin: "Just now",
+    activity: ["Signed in with Supabase Auth."],
+    role,
+    groupIds: [],
+    initials: initialsFromName(displayName),
+  };
+}
+
+function profileRowToUser(row) {
+  const displayName = row.display_name || row.email?.split("@")[0] || "User";
+  return {
+    id: row.id,
+    name: displayName,
+    legalName: row.legal_name || displayName,
+    displayName,
+    title: row.role === "Admin" ? "CEO" : "Team member",
+    email: row.email || "",
+    phone: row.phone || "",
+    workPhone: row.work_phone || "",
+    gender: row.gender || "",
+    dob: row.dob || "",
+    homeAddress: row.home_address || "",
+    photo: row.photo_url || "",
+    status: row.status || "Active",
+    lastLogin: row.last_login_at ? new Date(row.last_login_at).toLocaleString() : "Just now",
+    activity: ["Signed in with Supabase Auth."],
+    role: row.role || "User",
+    groupIds: [],
+    initials: initialsFromName(displayName),
+  };
 }
 
 function normalizeUser(user) {
