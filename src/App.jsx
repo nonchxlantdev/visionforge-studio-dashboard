@@ -349,11 +349,39 @@ export default function App() {
     setModal({ type: "task", id: task.id });
   }
 
-  function createUser(form, photo = "") {
+  async function createUser(form, photo = "") {
     const displayName = form.get("displayName").trim() || form.get("name").trim();
     const legalName = form.get("legalName").trim() || displayName;
+    const password = form.get("password");
+    let authUserId = createId();
+
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase.functions.invoke("admin-create-user", {
+        body: {
+          email: form.get("email").trim(),
+          password,
+          legalName,
+          displayName,
+          phone: form.get("phone").trim(),
+          workPhone: form.get("workPhone").trim(),
+          gender: form.get("gender"),
+          dob: form.get("dob") || null,
+          homeAddress: form.get("homeAddress").trim(),
+          photoUrl: "",
+          role: form.get("role"),
+          status: form.get("status"),
+          groupIds: form.getAll("groups"),
+        },
+      });
+      if (error) {
+        alert(`Supabase user creation failed: ${error.message}`);
+        return;
+      }
+      authUserId = data?.user?.id || authUserId;
+    }
+
     const user = {
-      id: createId(),
+      id: authUserId,
       name: displayName,
       legalName,
       displayName,
@@ -379,6 +407,22 @@ export default function App() {
     }));
     addUpdate("User created", `${user.name} was added as ${user.role}.`, "admin", user.id);
     setModal(null);
+  }
+
+  async function resetUserPassword(email) {
+    if (!isSupabaseConfigured || !supabase) {
+      alert("Supabase is not configured for password reset.");
+      return;
+    }
+    const redirectTo = window.location.origin === "null"
+      ? "https://nonchxlantdev.github.io/visionforge-studio-dashboard/"
+      : window.location.href;
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+    if (error) {
+      alert(`Password reset failed: ${error.message}`);
+      return;
+    }
+    alert(`Password reset email sent to ${email}.`);
   }
 
   function updateUser(userId, form, photo = "") {
@@ -480,7 +524,7 @@ export default function App() {
           onNotificationClick={handleNotificationClick}
           onLogout={handleLogout}
         />
-        {state.activeView === "admin" && <AdminView state={state} setModal={setModal} />}
+        {state.activeView === "admin" && <AdminView state={state} setModal={setModal} resetUserPassword={resetUserPassword} />}
         {state.activeView === "projects" && <ProjectTasksView state={state} helpers={helpers} patch={patch} setModal={setModal} openTask={openTask} openProject={openProject} />}
         {state.activeView === "inbox" && <InboxView messages={state.messages} />}
         {state.activeView === "dashboard" && (
@@ -499,7 +543,7 @@ export default function App() {
         {modal?.type === "new-task" && <TaskForm state={state} onSubmit={createTask} />}
         {modal?.type === "new-user" && <UserForm state={state} onSubmit={createUser} />}
         {modal?.type === "edit-user" && <UserForm state={state} user={state.users.find(item => item.id === modal.id)} onSubmit={(form, photo) => updateUser(modal.id, form, photo)} />}
-        {modal?.type === "user-detail" && <UserDetail user={state.users.find(item => item.id === modal.id)} state={state} setModal={setModal} />}
+        {modal?.type === "user-detail" && <UserDetail user={state.users.find(item => item.id === modal.id)} state={state} setModal={setModal} resetUserPassword={resetUserPassword} />}
         {modal?.type === "new-group" && <GroupForm state={state} onSubmit={createGroup} />}
         {modal?.type === "task" && <TaskDetail taskId={modal.id} state={state} helpers={helpers} addComment={addComment} />}
         {modal?.type === "project" && <ProjectDetail projectId={modal.id} state={state} helpers={helpers} updateProjectStatus={updateProjectStatus} openTask={openTask} setModal={setModal} />}
@@ -905,7 +949,7 @@ function ProjectTasksView({ state, helpers, patch, setModal, openTask, openProje
   );
 }
 
-function AdminView({ state, setModal }) {
+function AdminView({ state, setModal, resetUserPassword }) {
   const [query, setQuery] = useState("");
   const [role, setRole] = useState("All roles");
   const users = state.users.filter(user => {
@@ -946,6 +990,7 @@ function AdminView({ state, setModal }) {
               <span><em className={`status-dot-label ${String(user.status).toLowerCase()}`}>{user.status}</em></span>
               <span className="row-actions">
                 <button type="button" onClick={event => { event.stopPropagation(); setModal({ type: "edit-user", id: user.id }); }}>Edit</button>
+                <button type="button" onClick={event => { event.stopPropagation(); resetUserPassword(user.email); }}>Reset</button>
               </span>
             </button>
           ))}
@@ -1066,6 +1111,7 @@ function UserForm({ state, user, onSubmit }) {
         <input name="name" type="hidden" defaultValue={user?.displayName || user?.name || ""} />
         <Field label="Title"><input name="title" defaultValue={user?.title || ""} placeholder="CEO, Designer, Developer" /></Field>
         <Field label="Email"><input name="email" type="email" defaultValue={user?.email || ""} required placeholder="name@visionforge.studio" /></Field>
+        {!user ? <Field label="Create Password"><input name="password" type="password" required minLength="6" placeholder="Temporary password" /></Field> : null}
         <Field label="Phone"><input name="phone" defaultValue={user?.phone || ""} placeholder="Personal phone" /></Field>
         <Field label="Work Phone"><input name="workPhone" defaultValue={user?.workPhone || ""} placeholder="Work phone" /></Field>
         <Field label="Gender"><select name="gender" defaultValue={user?.gender || ""}><option value="">Select</option><option>Male</option><option>Female</option><option>Non-binary</option><option>Prefer not to say</option></select></Field>
@@ -1176,7 +1222,7 @@ function ProjectDetail({ projectId, state, helpers, updateProjectStatus, openTas
   );
 }
 
-function UserDetail({ user, state, setModal }) {
+function UserDetail({ user, state, setModal, resetUserPassword }) {
   if (!user) return null;
   const groups = user.groupIds?.map(id => state.groups.find(group => group.id === id)?.name).filter(Boolean).join(", ") || "No groups";
   return (
@@ -1189,7 +1235,10 @@ function UserDetail({ user, state, setModal }) {
           <span>{user.email}</span>
           <span>{user.phone || "No phone"}</span>
         </div>
-        <button className="ghost-btn" onClick={() => setModal({ type: "edit-user", id: user.id })}>Edit profile</button>
+        <div className="user-profile-actions">
+          <button className="ghost-btn" onClick={() => setModal({ type: "edit-user", id: user.id })}>Edit profile</button>
+          <button className="ghost-btn" onClick={() => resetUserPassword(user.email)}>Reset password</button>
+        </div>
       </div>
       <div className="profile-tabs">
         <span className="active">Worker Details</span>

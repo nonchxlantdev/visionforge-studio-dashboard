@@ -1167,6 +1167,7 @@ button:disabled {
   color: #176a91;
   font-size: 12px;
   font-weight: 800;
+  margin-right: 8px;
 }
 
 .user-form-grid {
@@ -1206,6 +1207,13 @@ button:disabled {
   border-radius: 8px;
   background: #f6f8fb;
   padding: 16px;
+}
+
+.user-profile-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .user-profile-hero h2 {

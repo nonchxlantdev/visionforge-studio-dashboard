@@ -40,3 +40,21 @@ For a real hosted collaboration app, yes, Supabase is the right next integration
 - Realtime channels for live project updates, inbox alerts, and notifications.
 
 GitHub Pages can host this as a frontend, but the production version will need Supabase database policies before real private collaboration is safe.
+
+## Supabase Edge Function
+
+Users & Permissions creates Supabase Auth users through an Edge Function so the service role key never goes into the browser.
+
+Deploy it from the project root with the Supabase CLI:
+
+```bash
+supabase functions deploy admin-create-user --project-ref ngifdiwhzqrigdlxwoua
+```
+
+Then set the service role secret in Supabase:
+
+```bash
+supabase secrets set SUPABASE_SERVICE_ROLE_KEY=your-service-role-key --project-ref ngifdiwhzqrigdlxwoua
+```
+
+Use the Supabase **service_role** key from Project Settings, not the database password.
