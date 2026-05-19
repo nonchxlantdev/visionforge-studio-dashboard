@@ -875,12 +875,26 @@ function Sidebar({ state, patch }) {
 function Topbar({ state, patch, openProjectModal, openTaskModal, onNotificationClick, onLogout }) {
   const unread = state.notifications.filter(item => !item.read);
   const currentUser = normalizeUser(state.user || ownerUser);
+  const notificationRef = useRef(null);
   const onlineUsers = state.onlineUsers?.length ? state.onlineUsers : state.loggedIn ? [{
     id: currentUser.id,
     name: currentUser.displayName || currentUser.name,
     initials: currentUser.initials,
     role: currentUser.role,
   }] : [];
+
+  useEffect(() => {
+    if (!state.notificationOpen) return undefined;
+
+    const closeOnOutsideClick = event => {
+      if (notificationRef.current?.contains(event.target)) return;
+      patch({ notificationOpen: false });
+    };
+
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    return () => document.removeEventListener("pointerdown", closeOnOutsideClick);
+  }, [state.notificationOpen, patch]);
+
   const title = {
     admin: "Users & Permissions",
     dashboard: "Dashboard",
@@ -900,7 +914,7 @@ function Topbar({ state, patch, openProjectModal, openTaskModal, onNotificationC
             <span className="mini-avatar online" title={`${user.name} is logged in${user.role ? ` as ${user.role}` : ""}`} key={user.id}>{user.initials || initialsFromName(user.name)}</span>
           ))}
         </div>
-        <div className="notification-wrap">
+        <div className="notification-wrap" ref={notificationRef}>
           <button
             className="notification-btn"
             onClick={() => patch(current => ({
