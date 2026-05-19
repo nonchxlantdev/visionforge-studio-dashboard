@@ -164,13 +164,19 @@ export default function App() {
 
   async function syncSupabaseUser(authUser) {
     const appUser = await upsertSupabaseProfile(authUser);
+    const workspace = await loadSupabaseWorkspace();
     patch(current => ({
       ...current,
       loggedIn: true,
       user: appUser,
-      users: current.users.some(user => user.id === appUser.id)
-        ? current.users.map(user => user.id === appUser.id ? { ...user, ...appUser } : user)
-        : [appUser, ...current.users.filter(user => user.email !== appUser.email)],
+      users: workspace.users.length
+        ? workspace.users.map(user => user.id === appUser.id ? { ...user, ...appUser } : user)
+        : current.users.some(user => user.id === appUser.id)
+          ? current.users.map(user => user.id === appUser.id ? { ...user, ...appUser } : user)
+          : [appUser, ...current.users.filter(user => user.email !== appUser.email)],
+      groups: workspace.loaded && workspace.groups.length ? workspace.groups : current.groups,
+      projects: workspace.loaded ? workspace.projects : current.projects,
+      tasks: workspace.loaded ? workspace.tasks : current.tasks,
     }));
   }
 
@@ -297,7 +303,7 @@ export default function App() {
     addUpdate("Task status updated", `${task.title} moved to ${statusLabel(status)}.`, "task", taskId);
   }
 
-  function createProject(form, files) {
+  async function createProject(form, files) {
     const project = {
       id: createId(),
       name: form.get("name").trim(),
@@ -308,6 +314,15 @@ export default function App() {
       attachments: files.map(file => ({ name: file.name, size: file.size, type: file.type || "File" })),
       color: randomColor(),
     };
+
+    if (isSupabaseConfigured && supabase) {
+      const error = await saveSupabaseProject(project, state.user.id);
+      if (error) {
+        alert(`Project save failed: ${error.message}`);
+        return;
+      }
+    }
+
     patch(current => ({
       ...current,
       projects: [...current.projects, project],
@@ -318,7 +333,7 @@ export default function App() {
     setModal(null);
   }
 
-  function updateProject(projectId, form, files) {
+  async function updateProject(projectId, form, files) {
     const existingProject = state.projects.find(item => item.id === projectId);
     if (!existingProject) return;
 
@@ -333,6 +348,14 @@ export default function App() {
       attachments: [...(existingProject.attachments || []), ...newAttachments],
     };
 
+    if (isSupabaseConfigured && supabase) {
+      const error = await saveSupabaseProject(project, state.user.id);
+      if (error) {
+        alert(`Project save failed: ${error.message}`);
+        return;
+      }
+    }
+
     patch(current => ({
       ...current,
       projects: current.projects.map(item => item.id === projectId ? project : item),
@@ -343,7 +366,7 @@ export default function App() {
     setModal({ type: "project", id: project.id });
   }
 
-  function createTask(form) {
+  async function createTask(form) {
     const task = {
       id: createId(),
       projectId: form.get("projectId"),
@@ -356,6 +379,15 @@ export default function App() {
       assignees: form.getAll("assignees"),
       comments: [],
     };
+
+    if (isSupabaseConfigured && supabase) {
+      const error = await saveSupabaseTask(task, state.user.id);
+      if (error) {
+        alert(`Task save failed: ${error.message}`);
+        return;
+      }
+    }
+
     patch(current => ({
       ...current,
       tasks: [...current.tasks, task],
@@ -367,7 +399,7 @@ export default function App() {
     setModal({ type: "task", id: task.id });
   }
 
-  function updateTask(taskId, form) {
+  async function updateTask(taskId, form) {
     const existingTask = state.tasks.find(item => item.id === taskId);
     if (!existingTask) return;
 
@@ -382,6 +414,14 @@ export default function App() {
       deadline: form.get("deadline"),
       assignees: form.getAll("assignees"),
     };
+
+    if (isSupabaseConfigured && supabase) {
+      const error = await saveSupabaseTask(task, state.user.id);
+      if (error) {
+        alert(`Task save failed: ${error.message}`);
+        return;
+      }
+    }
 
     patch(current => ({
       ...current,
@@ -1488,6 +1528,143 @@ function profileRowToUser(row) {
   };
 }
 
+async function loadSupabaseWorkspace() {
+  const emptyWorkspace = { loaded: false, users: [], groups: [], projects: [], tasks: [] };
+  if (!supabase) return emptyWorkspace;
+
+  const [
+    profilesResult,
+    groupsResult,
+    groupMembersResult,
+    projectsResult,
+    tasksResult,
+    taskAssigneesResult,
+  ] = await Promise.all([
+    supabase.from("profiles").select("*").order("created_at", { ascending: true }),
+    supabase.from("groups").select("*").order("created_at", { ascending: true }),
+    supabase.from("group_members").select("*"),
+    supabase.from("projects").select("*").order("created_at", { ascending: true }),
+    supabase.from("tasks").select("*").order("created_at", { ascending: true }),
+    supabase.from("task_assignees").select("*"),
+  ]);
+
+  const firstError = [
+    profilesResult.error,
+    groupsResult.error,
+    groupMembersResult.error,
+    projectsResult.error,
+    tasksResult.error,
+    taskAssigneesResult.error,
+  ].find(Boolean);
+
+  if (firstError) {
+    console.warn("Supabase workspace load failed:", firstError.message);
+    return emptyWorkspace;
+  }
+
+  const userGroupIds = new Map();
+  for (const member of groupMembersResult.data || []) {
+    const groupIds = userGroupIds.get(member.profile_id) || [];
+    groupIds.push(member.group_id);
+    userGroupIds.set(member.profile_id, groupIds);
+  }
+
+  const taskAssignees = new Map();
+  for (const assignee of taskAssigneesResult.data || []) {
+    const profileIds = taskAssignees.get(assignee.task_id) || [];
+    profileIds.push(assignee.profile_id);
+    taskAssignees.set(assignee.task_id, profileIds);
+  }
+
+  return {
+    loaded: true,
+    users: (profilesResult.data || []).map(row => ({ ...profileRowToUser(row), groupIds: userGroupIds.get(row.id) || [] })),
+    groups: (groupsResult.data || []).map(row => ({
+      id: row.id,
+      name: row.name,
+      description: row.description || "",
+      memberIds: (groupMembersResult.data || []).filter(member => member.group_id === row.id).map(member => member.profile_id),
+    })),
+    projects: (projectsResult.data || []).map(projectRowToProject),
+    tasks: (tasksResult.data || []).map(row => taskRowToTask(row, taskAssignees.get(row.id) || [])),
+  };
+}
+
+async function saveSupabaseProject(project, userId) {
+  if (!supabase) return null;
+
+  const { error } = await supabase.from("projects").upsert({
+    id: project.id,
+    name: project.name,
+    description: project.description,
+    status: project.status || "active",
+    start_date: project.startDate || null,
+    deadline: project.deadline || null,
+    color: project.color || randomColor(),
+    created_by: isUuid(userId) ? userId : null,
+    updated_at: new Date().toISOString(),
+  });
+
+  return error;
+}
+
+async function saveSupabaseTask(task, userId) {
+  if (!supabase) return null;
+
+  const { error: taskError } = await supabase.from("tasks").upsert({
+    id: task.id,
+    project_id: task.projectId,
+    title: task.title,
+    type: task.type,
+    description: task.description,
+    status: task.status || "not-started",
+    priority: task.priority || "Medium",
+    deadline: task.deadline || null,
+    created_by: isUuid(userId) ? userId : null,
+    updated_at: new Date().toISOString(),
+  });
+  if (taskError) return taskError;
+
+  const { error: deleteError } = await supabase.from("task_assignees").delete().eq("task_id", task.id);
+  if (deleteError) return deleteError;
+
+  const assigneeRows = (task.assignees || [])
+    .filter(isUuid)
+    .map(profileId => ({ task_id: task.id, profile_id: profileId }));
+  if (!assigneeRows.length) return null;
+
+  const { error: assigneeError } = await supabase.from("task_assignees").insert(assigneeRows);
+  return assigneeError;
+}
+
+function projectRowToProject(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description || "",
+    status: row.status || "active",
+    startDate: row.start_date || "",
+    deadline: row.deadline || "",
+    color: row.color || randomColor(),
+    attachments: [],
+  };
+}
+
+function taskRowToTask(row, assignees) {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    title: row.title,
+    type: row.type || "Task",
+    description: row.description || "",
+    status: row.status || "not-started",
+    priority: row.priority || "Medium",
+    deadline: row.deadline || "",
+    assignees,
+    comments: [],
+  };
+}
+
 function normalizeUser(user) {
   const displayName = user.displayName || user.name || "Unnamed User";
   return {
@@ -1507,6 +1684,10 @@ function normalizeUser(user) {
     legalName: user.legalName || displayName,
     initials: user.initials || initialsFromName(displayName),
   };
+}
+
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value));
 }
 
 function statusLabel(statusId) {
