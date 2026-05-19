@@ -354,6 +354,10 @@ button:disabled {
   font-size: 11px;
 }
 
+.mini-avatar.online {
+  box-shadow: 0 0 0 2px #14a86b;
+}
+
 .main {
   min-width: 0;
   padding: 22px clamp(18px, 3vw, 36px) 34px;

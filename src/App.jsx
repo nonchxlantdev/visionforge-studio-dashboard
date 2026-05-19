@@ -4,7 +4,7 @@ import ElectricBorder from "./ElectricBorder.jsx";
 import logoUrl from "../assets/vision-forge-logo.png";
 import { isSupabaseConfigured, supabase } from "./lib/supabase.js";
 
-const STORAGE_KEY = "vision-forge-react-dashboard-v1";
+const STORAGE_KEY = "vision-forge-react-dashboard-v2";
 
 const statuses = [
   { id: "not-started", label: "Not Started", color: "#687386", progress: 0 },
@@ -29,6 +29,37 @@ const roles = {
 const today = new Date();
 const CloseModalContext = createContext(() => {});
 const ownerEmail = "glenrickmspain@hotmail.com";
+const ownerUser = {
+  id: "u1",
+  name: "Glenrick Spain",
+  legalName: "Glenrick Spain",
+  displayName: "Glenrick Spain",
+  title: "CEO",
+  email: ownerEmail,
+  phone: "",
+  workPhone: "",
+  gender: "",
+  dob: "",
+  homeAddress: "",
+  photo: "",
+  status: "Active",
+  lastLogin: "Today",
+  activity: ["Created the Vision Forge Studio workspace."],
+  role: "Admin",
+  groupIds: ["g1"],
+  initials: "GS",
+};
+
+async function getSupabaseFunctionErrorMessage(error) {
+  if (!error?.context) return error?.message || "Unknown error";
+
+  try {
+    const payload = await error.context.clone().json();
+    return payload?.error || payload?.message || error.message;
+  } catch {
+    return error.message;
+  }
+}
 
 const initialState = {
   loggedIn: false,
@@ -38,47 +69,8 @@ const initialState = {
   activeProjectStatus: "active",
   search: "",
   movingTaskId: "",
-  user: {
-    id: "u1",
-    name: "Glenrick Spain",
-    legalName: "Glenrick Spain",
-    displayName: "Glenrick Spain",
-    title: "CEO",
-    email: ownerEmail,
-    phone: "",
-    workPhone: "",
-    gender: "",
-    dob: "",
-    homeAddress: "",
-    photo: "",
-    status: "Active",
-    lastLogin: "Today",
-    activity: ["Created the Vision Forge Studio workspace."],
-    role: "Admin",
-    initials: "GS",
-  },
-  users: [
-    {
-      id: "u1",
-      name: "Glenrick Spain",
-      legalName: "Glenrick Spain",
-      displayName: "Glenrick Spain",
-      title: "CEO",
-      email: ownerEmail,
-      phone: "",
-      workPhone: "",
-      gender: "",
-      dob: "",
-      homeAddress: "",
-      photo: "",
-      status: "Active",
-      lastLogin: "Today",
-      activity: ["Created the Vision Forge Studio workspace."],
-      role: "Admin",
-      groupIds: ["g1"],
-      initials: "GS",
-    },
-  ],
+  user: ownerUser,
+  users: [ownerUser],
   groups: [
     {
       id: "g1",
@@ -374,7 +366,7 @@ export default function App() {
         },
       });
       if (error) {
-        alert(`Supabase user creation failed: ${error.message}`);
+        alert(`Supabase user creation failed: ${await getSupabaseFunctionErrorMessage(error)}`);
         return;
       }
       authUserId = data?.user?.id || authUserId;
@@ -439,7 +431,7 @@ export default function App() {
         body: { userId },
       });
       if (error) {
-        alert(`Supabase user deletion failed: ${error.message}`);
+        alert(`Supabase user deletion failed: ${await getSupabaseFunctionErrorMessage(error)}`);
         return;
       }
     }
@@ -634,6 +626,7 @@ function Login({ onLogin, onSignup, onGoogle, email, message, loading }) {
 }
 
 function Sidebar({ state, patch }) {
+  const currentUser = normalizeUser(state.user || ownerUser);
   const nav = [
     ["admin", "Users & Permissions", ""],
     ["dashboard", "Dashboard", ""],
@@ -656,10 +649,10 @@ function Sidebar({ state, patch }) {
         ))}
       </div>
       <div className="profile-card">
-        <span className="avatar">GS</span>
+        <span className="avatar">{currentUser.initials}</span>
         <div>
-          <strong>Glenrick Spain</strong>
-          <div className="muted-small">CEO / Admin</div>
+          <strong>{currentUser.displayName || currentUser.name}</strong>
+          <div className="muted-small">{currentUser.title || "Team member"} / {currentUser.role || "User"}</div>
         </div>
       </div>
     </aside>
@@ -668,6 +661,7 @@ function Sidebar({ state, patch }) {
 
 function Topbar({ state, patch, openProjectModal, openTaskModal, onNotificationClick, onLogout }) {
   const unread = state.notifications.filter(item => !item.read);
+  const currentUser = normalizeUser(state.user || ownerUser);
   const title = {
     admin: "Users & Permissions",
     dashboard: "Dashboard",
@@ -683,7 +677,7 @@ function Topbar({ state, patch, openProjectModal, openTaskModal, onNotificationC
       </div>
       <div className="topbar-actions">
         <div className="avatar-stack">
-          {state.users.map(user => <span className="mini-avatar" title={user.name} key={user.id}>{user.initials}</span>)}
+          {state.loggedIn ? <span className="mini-avatar online" title={`${currentUser.displayName || currentUser.name} is logged in`}>{currentUser.initials}</span> : null}
         </div>
         <div className="notification-wrap">
           <button

@@ -24,6 +24,16 @@ serve(async req => {
 
     const admin = createClient(supabaseUrl, serviceRoleKey);
 
+    const cleanupSteps = [
+      admin.from("projects").update({ created_by: null }).eq("created_by", userId),
+      admin.from("tasks").update({ created_by: null }).eq("created_by", userId),
+      admin.from("comments").update({ profile_id: null }).eq("profile_id", userId),
+    ];
+
+    const cleanupResults = await Promise.all(cleanupSteps);
+    const cleanupError = cleanupResults.find(result => result.error)?.error;
+    if (cleanupError) throw cleanupError;
+
     const { error: deleteError } = await admin.auth.admin.deleteUser(userId);
     if (deleteError) throw deleteError;
 
@@ -32,10 +42,11 @@ serve(async req => {
       status: 200,
     });
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    console.error("admin-delete-user failed", error);
+
+    return new Response(JSON.stringify({ error: error.message || "User deletion failed." }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 400,
     });
   }
 });
-
