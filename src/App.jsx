@@ -8,7 +8,7 @@ const STORAGE_KEY = "vision-forge-react-dashboard-v3";
 const LEADERSHIP_GROUP_ID = "11111111-1111-4111-8111-111111111111";
 
 const statuses = [
-  { id: "not-started", label: "Not Started", color: "#687386", progress: 0 },
+  { id: "not-started", label: "Not Started", color: "#df4d53", progress: 0 },
   { id: "in-progress", label: "In Progress", color: "#8068d9", progress: 45 },
   { id: "review", label: "In Review", color: "#f5a623", progress: 80 },
   { id: "completed", label: "Completed", color: "#14a86b", progress: 100 },
