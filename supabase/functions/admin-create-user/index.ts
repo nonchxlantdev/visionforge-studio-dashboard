@@ -7,6 +7,8 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 serve(async req => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -57,13 +59,26 @@ serve(async req => {
 
     if (profileError) throw profileError;
 
-    if (Array.isArray(payload.groupIds) && payload.groupIds.length) {
-      const groupRows = payload.groupIds.map((groupId: string) => ({
+    const groupIds = Array.isArray(payload.groupIds)
+      ? payload.groupIds.filter((groupId: unknown) => typeof groupId === "string" && uuidPattern.test(groupId))
+      : [];
+
+    if (groupIds.length) {
+      const { data: groups, error: groupsError } = await admin
+        .from("groups")
+        .select("id")
+        .in("id", groupIds);
+      if (groupsError) throw groupsError;
+
+      const existingGroupIds = new Set((groups || []).map(group => group.id));
+      const groupRows = groupIds.filter(groupId => existingGroupIds.has(groupId)).map((groupId: string) => ({
         group_id: groupId,
         profile_id: user.id,
       }));
-      const { error: groupError } = await admin.from("group_members").upsert(groupRows);
-      if (groupError) throw groupError;
+      if (groupRows.length) {
+        const { error: groupError } = await admin.from("group_members").upsert(groupRows);
+        if (groupError) throw groupError;
+      }
     }
 
     return new Response(JSON.stringify({ user }), {
@@ -77,4 +92,3 @@ serve(async req => {
     });
   }
 });
-

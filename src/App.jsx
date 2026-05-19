@@ -4,7 +4,8 @@ import ElectricBorder from "./ElectricBorder.jsx";
 import logoUrl from "../assets/vision-forge-logo.png";
 import { isSupabaseConfigured, supabase } from "./lib/supabase.js";
 
-const STORAGE_KEY = "vision-forge-react-dashboard-v2";
+const STORAGE_KEY = "vision-forge-react-dashboard-v3";
+const LEADERSHIP_GROUP_ID = "11111111-1111-4111-8111-111111111111";
 
 const statuses = [
   { id: "not-started", label: "Not Started", color: "#687386", progress: 0 },
@@ -46,7 +47,7 @@ const ownerUser = {
   lastLogin: "Today",
   activity: ["Created the Vision Forge Studio workspace."],
   role: "Admin",
-  groupIds: ["g1"],
+  groupIds: [LEADERSHIP_GROUP_ID],
   initials: "GS",
 };
 
@@ -73,7 +74,7 @@ const initialState = {
   users: [ownerUser],
   groups: [
     {
-      id: "g1",
+      id: LEADERSHIP_GROUP_ID,
       name: "Leadership",
       description: "Owners and operators with full workspace visibility.",
       memberIds: ["u1"],
