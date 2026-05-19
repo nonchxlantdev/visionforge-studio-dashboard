@@ -54,6 +54,7 @@ create table if not exists public.tasks (
   status text not null default 'not-started',
   priority text not null default 'Medium',
   deadline date,
+  attachments jsonb not null default '[]'::jsonb,
   created_by uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

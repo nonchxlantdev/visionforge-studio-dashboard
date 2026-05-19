@@ -62,3 +62,5 @@ supabase secrets set SUPABASE_SERVICE_ROLE_KEY=your-service-role-key --project-r
 Use the Supabase **service_role** key from Project Settings, not the database password.
 
 If you applied `supabase/schema.sql` before user deletion references used `ON DELETE SET NULL`, run `supabase/user-delete-constraints.sql` once in the Supabase SQL editor before testing user deletion again.
+
+For downloadable task images and documents, run `supabase/task-attachments-storage.sql` once in the Supabase SQL editor. Uploaded files will appear in Supabase Dashboard under **Storage** > **task-attachments**.

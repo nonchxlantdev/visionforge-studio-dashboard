@@ -448,8 +448,9 @@ export default function App() {
   }
 
   async function createTask(form) {
+    const taskId = createId();
     const task = {
-      id: createId(),
+      id: taskId,
       projectId: form.get("projectId"),
       title: form.get("title").trim(),
       type: form.get("type").trim(),
@@ -459,7 +460,18 @@ export default function App() {
       deadline: form.get("deadline"),
       assignees: form.getAll("assignees"),
       comments: [],
+      attachments: [],
     };
+
+    const files = [...(form.getAll("attachments") || [])].filter(file => file instanceof File && file.size > 0);
+    if (files.length) {
+      const { attachments, error } = await uploadTaskAttachments(task.id, files);
+      if (error) {
+        alert(`Task attachment upload failed: ${error.message}`);
+        return;
+      }
+      task.attachments = attachments;
+    }
 
     if (isSupabaseConfigured && supabase) {
       const error = await saveSupabaseTask(task, state.user.id);
@@ -483,6 +495,17 @@ export default function App() {
   async function updateTask(taskId, form) {
     const existingTask = state.tasks.find(item => item.id === taskId);
     if (!existingTask) return;
+    const files = [...(form.getAll("attachments") || [])].filter(file => file instanceof File && file.size > 0);
+    let newAttachments = [];
+
+    if (files.length) {
+      const result = await uploadTaskAttachments(taskId, files);
+      if (result.error) {
+        alert(`Task attachment upload failed: ${result.error.message}`);
+        return;
+      }
+      newAttachments = result.attachments;
+    }
 
     const task = {
       ...existingTask,
@@ -494,6 +517,7 @@ export default function App() {
       priority: form.get("priority"),
       deadline: form.get("deadline"),
       assignees: form.getAll("assignees"),
+      attachments: [...(existingTask.attachments || []), ...newAttachments],
     };
 
     if (isSupabaseConfigured && supabase) {
@@ -511,6 +535,60 @@ export default function App() {
     }));
     addUpdate("Task updated", `${task.title} was updated.`, "task", task.id, task.deadline);
     setModal({ type: "task", id: task.id });
+  }
+
+  async function uploadTaskAttachments(taskId, files) {
+    const fallbackAttachments = files.map(file => ({
+      id: createId(),
+      name: file.name,
+      size: file.size,
+      type: file.type || "File",
+      bucket: "",
+      path: "",
+    }));
+
+    if (!isSupabaseConfigured || !supabase) {
+      return { attachments: fallbackAttachments, error: null };
+    }
+
+    const attachments = [];
+    for (const file of files) {
+      const attachmentId = createId();
+      const safeName = file.name.replace(/[^a-z0-9._-]/gi, "-");
+      const path = `${taskId}/${attachmentId}-${safeName}`;
+      const { error } = await supabase.storage.from("task-attachments").upload(path, file, {
+        cacheControl: "3600",
+        upsert: false,
+      });
+
+      if (error) return { attachments, error };
+
+      attachments.push({
+        id: attachmentId,
+        name: file.name,
+        size: file.size,
+        type: file.type || "File",
+        bucket: "task-attachments",
+        path,
+      });
+    }
+
+    return { attachments, error: null };
+  }
+
+  async function downloadTaskAttachment(attachment) {
+    if (!attachment?.bucket || !attachment?.path || !supabase) {
+      alert("This attachment is not available for download from Supabase Storage.");
+      return;
+    }
+
+    const { data, error } = await supabase.storage.from(attachment.bucket).createSignedUrl(attachment.path, 60);
+    if (error) {
+      alert(`Attachment download failed: ${error.message}`);
+      return;
+    }
+
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
   }
 
   async function createUser(form, photo = "") {
@@ -785,7 +863,7 @@ export default function App() {
         {modal?.type === "edit-user" && <UserForm state={state} user={state.users.find(item => item.id === modal.id)} onSubmit={(form, photo) => updateUser(modal.id, form, photo)} />}
         {modal?.type === "user-detail" && <UserDetail user={state.users.find(item => item.id === modal.id)} state={state} setModal={setModal} resetUserPassword={resetUserPassword} deleteUser={deleteUser} />}
         {modal?.type === "new-group" && <GroupForm state={state} onSubmit={createGroup} />}
-        {modal?.type === "task" && <TaskDetail taskId={modal.id} state={state} helpers={helpers} addComment={addComment} setModal={setModal} />}
+        {modal?.type === "task" && <TaskDetail taskId={modal.id} state={state} helpers={helpers} addComment={addComment} setModal={setModal} downloadAttachment={downloadTaskAttachment} />}
         {modal?.type === "project" && <ProjectDetail projectId={modal.id} state={state} helpers={helpers} updateProjectStatus={updateProjectStatus} openTask={openTask} setModal={setModal} />}
       </Modal>
     </section>
@@ -1348,6 +1426,8 @@ function TaskForm({ state, task, onSubmit }) {
         <Field label="Status"><select name="status" defaultValue={task?.status || "not-started"}>{statuses.map(status => <option key={status.id} value={status.id}>{status.label}</option>)}</select></Field>
         <Field label="Priority"><select name="priority" defaultValue={task?.priority || "Medium"}><option>Medium</option><option>High</option><option>Low</option></select></Field>
         <Field label="Deadline"><input name="deadline" type="date" required defaultValue={task?.deadline || ""} /></Field>
+        <Field label="Attachments"><input name="attachments" type="file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip" /></Field>
+        <p className="login-note">{task ? `Existing files: ${attachmentNames(task.attachments) || "none"}. New uploads will be added to the task.` : "Add images or documents that can be downloaded from the task detail view."}</p>
         <div className="modal-actions"><button className="primary-btn" type="submit">{task ? "Save task" : "Create task"}</button></div>
       </form>
     </>
@@ -1411,7 +1491,7 @@ function GroupForm({ state, onSubmit }) {
   );
 }
 
-function TaskDetail({ taskId, state, helpers, addComment, setModal }) {
+function TaskDetail({ taskId, state, helpers, addComment, setModal, downloadAttachment }) {
   const task = state.tasks.find(item => item.id === taskId);
   const [text, setText] = useState("");
   const [mentionOpen, setMentionOpen] = useState(false);
@@ -1433,6 +1513,19 @@ function TaskDetail({ taskId, state, helpers, addComment, setModal }) {
         <p className="subtle">{task.description}</p>
         <div className="timeline-item compact-info"><strong>Assignees</strong><span className="muted-small">{task.assignees.map(id => helpers.getUser(id)?.name).filter(Boolean).join(", ") || "No assignees"}</span></div>
         <div className="timeline-item compact-info"><strong>Project attachments</strong><span className="muted-small">{attachmentNames(project?.attachments || []) || "No attachments yet"}</span></div>
+        <div className="timeline-item compact-info">
+          <strong>Task attachments</strong>
+          {task.attachments?.length ? (
+            <div className="attachment-list">
+              {task.attachments.map(attachment => (
+                <button type="button" className="attachment-link" key={attachment.id || attachment.path || attachment.name} onClick={() => downloadAttachment(attachment)}>
+                  <span>{attachment.name}</span>
+                  <small>{formatFileSize(attachment.size)}</small>
+                </button>
+              ))}
+            </div>
+          ) : <span className="muted-small">No task attachments yet</span>}
+        </div>
         <div className="chat-panel">
           <div className="chat-head"><strong>Comments</strong><span>{task.comments.length}</span></div>
           <div className="comment-board chat-board">{task.comments.length ? task.comments.map(comment => <Comment key={`${comment.by}-${comment.date}-${comment.text}`} comment={comment} />) : <div className="chat-empty">No comments yet.</div>}</div>
@@ -1764,6 +1857,7 @@ async function saveSupabaseTask(task, userId) {
     status: task.status || "not-started",
     priority: task.priority || "Medium",
     deadline: task.deadline || null,
+    attachments: task.attachments || [],
     created_by: isUuid(userId) ? userId : null,
     updated_at: new Date().toISOString(),
   });
@@ -1806,6 +1900,7 @@ function taskRowToTask(row, assignees) {
     deadline: row.deadline || "",
     assignees,
     comments: [],
+    attachments: row.attachments || [],
   };
 }
 

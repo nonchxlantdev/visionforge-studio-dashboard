@@ -967,6 +967,38 @@ button:disabled {
   font-weight: 700;
 }
 
+.attachment-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.attachment-link {
+  display: inline-grid;
+  gap: 2px;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  padding: 7px 10px;
+  text-align: left;
+}
+
+.attachment-link span {
+  max-width: 210px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.attachment-link small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .panel-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(300px, 0.6fr);
