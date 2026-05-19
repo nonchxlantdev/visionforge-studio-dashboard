@@ -1170,6 +1170,10 @@ button:disabled {
   margin-right: 8px;
 }
 
+.row-actions .danger-link {
+  color: #bd3037;
+}
+
 .user-form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1214,6 +1218,15 @@ button:disabled {
   gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.danger-btn {
+  border-color: #f3c6c9;
+  color: #bd3037;
+}
+
+.danger-btn:hover {
+  background: var(--red-soft);
 }
 
 .user-profile-hero h2 {
