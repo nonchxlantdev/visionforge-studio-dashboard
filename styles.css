@@ -1524,26 +1524,80 @@ button:disabled {
 
 .chat-compose {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-  padding: 10px;
+  grid-template-columns: minmax(280px, 1fr) auto;
+  gap: 10px;
+  padding: 12px;
   border-top: 1px solid var(--line);
   background: #fbfcfd;
 }
 
 .chat-compose textarea {
-  min-height: 42px;
-  max-height: 100px;
+  min-height: 46px;
+  max-height: 180px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 10px;
-  resize: vertical;
+  padding: 12px;
+  resize: none;
+  overflow-y: auto;
+  line-height: 1.45;
 }
 
 .chat-compose .primary-btn {
   width: auto;
   min-width: 72px;
   margin: 0;
+}
+
+.attachment-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+
+.attachment-preview {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  padding: 8px;
+  text-align: left;
+}
+
+.attachment-preview img,
+.attachment-file-icon {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 6px;
+  background: #eef1f5;
+}
+
+.attachment-preview img {
+  object-fit: cover;
+}
+
+.attachment-file-icon {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.attachment-preview span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.attachment-preview small {
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .task-detail-grid {
@@ -2034,5 +2088,13 @@ button:disabled {
   .ghost-btn,
   .modal-actions .primary-btn {
     flex: 1 1 auto;
+  }
+
+  .chat-compose {
+    grid-template-columns: 1fr;
+  }
+
+  .chat-compose .primary-btn {
+    width: 100%;
   }
 }

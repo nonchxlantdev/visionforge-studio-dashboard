@@ -282,7 +282,7 @@ export default function App() {
     if (error) {
       setAuthMessage(error.message);
     } else {
-      setAuthMessage("Account created. Check your email if Supabase requires confirmation, then sign in.");
+      setAuthMessage("Account created. Check your email if confirmation is required, then sign in.");
     }
   }
 
@@ -385,16 +385,27 @@ export default function App() {
   }
 
   async function createProject(form, files) {
+    const projectId = createId();
     const project = {
-      id: createId(),
+      id: projectId,
       name: form.get("name").trim(),
       description: form.get("description").trim(),
       startDate: form.get("startDate"),
       deadline: form.get("deadline"),
       status: form.get("status"),
-      attachments: files.map(file => ({ name: file.name, size: file.size, type: file.type || "File" })),
+      attachments: [],
       color: randomColor(),
     };
+
+    const projectFiles = files.filter(file => file instanceof File && file.size > 0);
+    if (projectFiles.length) {
+      const { attachments, error } = await uploadAttachments("project-attachments", project.id, projectFiles);
+      if (error) {
+        alert(`Project attachment upload failed: ${error.message}`);
+        return;
+      }
+      project.attachments = attachments;
+    }
 
     if (isSupabaseConfigured && supabase) {
       const error = await saveSupabaseProject(project, state.user.id);
@@ -417,8 +428,18 @@ export default function App() {
   async function updateProject(projectId, form, files) {
     const existingProject = state.projects.find(item => item.id === projectId);
     if (!existingProject) return;
+    const projectFiles = files.filter(file => file instanceof File && file.size > 0);
+    let newAttachments = [];
 
-    const newAttachments = files.map(file => ({ name: file.name, size: file.size, type: file.type || "File" }));
+    if (projectFiles.length) {
+      const result = await uploadAttachments("project-attachments", projectId, projectFiles);
+      if (result.error) {
+        alert(`Project attachment upload failed: ${result.error.message}`);
+        return;
+      }
+      newAttachments = result.attachments;
+    }
+
     const project = {
       ...existingProject,
       name: form.get("name").trim(),
@@ -465,7 +486,7 @@ export default function App() {
 
     const files = [...(form.getAll("attachments") || [])].filter(file => file instanceof File && file.size > 0);
     if (files.length) {
-      const { attachments, error } = await uploadTaskAttachments(task.id, files);
+      const { attachments, error } = await uploadAttachments("task-attachments", task.id, files);
       if (error) {
         alert(`Task attachment upload failed: ${error.message}`);
         return;
@@ -499,7 +520,7 @@ export default function App() {
     let newAttachments = [];
 
     if (files.length) {
-      const result = await uploadTaskAttachments(taskId, files);
+      const result = await uploadAttachments("task-attachments", taskId, files);
       if (result.error) {
         alert(`Task attachment upload failed: ${result.error.message}`);
         return;
@@ -537,7 +558,7 @@ export default function App() {
     setModal({ type: "task", id: task.id });
   }
 
-  async function uploadTaskAttachments(taskId, files) {
+  async function uploadAttachments(bucket, recordId, files) {
     const fallbackAttachments = files.map(file => ({
       id: createId(),
       name: file.name,
@@ -555,8 +576,8 @@ export default function App() {
     for (const file of files) {
       const attachmentId = createId();
       const safeName = file.name.replace(/[^a-z0-9._-]/gi, "-");
-      const path = `${taskId}/${attachmentId}-${safeName}`;
-      const { error } = await supabase.storage.from("task-attachments").upload(path, file, {
+      const path = `${recordId}/${attachmentId}-${safeName}`;
+      const { error } = await supabase.storage.from(bucket).upload(path, file, {
         cacheControl: "3600",
         upsert: false,
       });
@@ -568,7 +589,7 @@ export default function App() {
         name: file.name,
         size: file.size,
         type: file.type || "File",
-        bucket: "task-attachments",
+        bucket,
         path,
       });
     }
@@ -576,9 +597,9 @@ export default function App() {
     return { attachments, error: null };
   }
 
-  async function downloadTaskAttachment(attachment) {
+  async function downloadAttachment(attachment) {
     if (!attachment?.bucket || !attachment?.path || !supabase) {
-      alert("This attachment is not available for download from Supabase Storage.");
+      alert("This attachment is not available for download yet.");
       return;
     }
 
@@ -616,7 +637,7 @@ export default function App() {
         },
       });
       if (error) {
-        alert(`Supabase user creation failed: ${await getSupabaseFunctionErrorMessage(error)}`);
+        alert(`User creation failed: ${await getSupabaseFunctionErrorMessage(error)}`);
         return;
       }
       authUserId = data?.user?.id || authUserId;
@@ -653,7 +674,7 @@ export default function App() {
 
   async function resetUserPassword(email) {
     if (!isSupabaseConfigured || !supabase) {
-      alert("Supabase is not configured for password reset.");
+      alert("Password reset is not available right now.");
       return;
     }
     const redirectTo = window.location.origin === "null"
@@ -674,14 +695,14 @@ export default function App() {
       alert("The primary owner account cannot be deleted from the admin panel.");
       return;
     }
-    if (!window.confirm(`Delete ${user.displayName || user.name}? This removes their Supabase login and profile.`)) return;
+    if (!window.confirm(`Delete ${user.displayName || user.name}? This removes their workspace login and profile.`)) return;
 
     if (isSupabaseConfigured && supabase) {
       const { error } = await supabase.functions.invoke("admin-delete-user", {
         body: { userId },
       });
       if (error) {
-        alert(`Supabase user deletion failed: ${await getSupabaseFunctionErrorMessage(error)}`);
+        alert(`User deletion failed: ${await getSupabaseFunctionErrorMessage(error)}`);
         return;
       }
     }
@@ -728,7 +749,7 @@ export default function App() {
         },
       });
       if (error) {
-        alert(`Supabase user update failed: ${await getSupabaseFunctionErrorMessage(error)}`);
+        alert(`User update failed: ${await getSupabaseFunctionErrorMessage(error)}`);
         return;
       }
     }
@@ -803,16 +824,33 @@ export default function App() {
     setModal(null);
   }
 
-  function addComment(taskId, text) {
+  async function addComment(taskId, text) {
     const task = state.tasks.find(item => item.id === taskId);
-    if (!task || !text.trim()) return;
+    if (!task || !text.trim()) return false;
+    const comment = {
+      id: createId(),
+      by: state.user.name,
+      userId: state.user.id,
+      text: text.trim(),
+      date: normalizeDate(new Date()),
+    };
+
+    if (isSupabaseConfigured && supabase) {
+      const error = await saveSupabaseComment(taskId, comment);
+      if (error) {
+        alert(`Comment save failed: ${error.message}`);
+        return false;
+      }
+    }
+
     patch(current => ({
       ...current,
       tasks: current.tasks.map(item => item.id === taskId
-        ? { ...item, comments: [...item.comments, { by: state.user.name, userId: state.user.id, text: text.trim(), date: normalizeDate(new Date()) }] }
+        ? { ...item, comments: [...item.comments, comment] }
         : item),
     }));
     addUpdate("New comment", `${state.user.name} commented on ${task.title}.`, "task", task.id);
+    return true;
   }
 
   if (!state.loggedIn) {
@@ -863,8 +901,8 @@ export default function App() {
         {modal?.type === "edit-user" && <UserForm state={state} user={state.users.find(item => item.id === modal.id)} onSubmit={(form, photo) => updateUser(modal.id, form, photo)} />}
         {modal?.type === "user-detail" && <UserDetail user={state.users.find(item => item.id === modal.id)} state={state} setModal={setModal} resetUserPassword={resetUserPassword} deleteUser={deleteUser} />}
         {modal?.type === "new-group" && <GroupForm state={state} onSubmit={createGroup} />}
-        {modal?.type === "task" && <TaskDetail taskId={modal.id} state={state} helpers={helpers} addComment={addComment} setModal={setModal} downloadAttachment={downloadTaskAttachment} />}
-        {modal?.type === "project" && <ProjectDetail projectId={modal.id} state={state} helpers={helpers} updateProjectStatus={updateProjectStatus} openTask={openTask} setModal={setModal} />}
+        {modal?.type === "task" && <TaskDetail taskId={modal.id} state={state} helpers={helpers} addComment={addComment} setModal={setModal} downloadAttachment={downloadAttachment} />}
+        {modal?.type === "project" && <ProjectDetail projectId={modal.id} state={state} helpers={helpers} updateProjectStatus={updateProjectStatus} openTask={openTask} setModal={setModal} downloadAttachment={downloadAttachment} />}
       </Modal>
     </section>
   );
@@ -887,14 +925,14 @@ function Login({ onLogin, onSignup, onGoogle, email, message, loading }) {
         <div className="login-meta">
           <span>Project tracker</span>
           <span>Admin permissions</span>
-          <span>{isSupabaseConfigured ? "Supabase linked" : "Supabase-ready"}</span>
+          <span>Secure workspace</span>
         </div>
       </div>
       <div className="login-panel">
         <form className="login-card" onSubmit={event => { event.preventDefault(); onLogin({ email: loginEmail, password }); }}>
           <span className="eyebrow">Private admin portal</span>
           <h2>Welcome to Vision Forge Studio</h2>
-          <p className="subtle">Sign in with your email and password, or continue with Google once it is enabled in Supabase Auth.</p>
+          <p className="subtle">Sign in with your Vision Forge Studio workspace account, or continue with Google when it is enabled for your team.</p>
           <div className="field">
             <label htmlFor="email">Email</label>
             <input id="email" type="email" value={loginEmail} onChange={event => setLoginEmail(event.target.value)} />
@@ -909,7 +947,7 @@ function Login({ onLogin, onSignup, onGoogle, email, message, loading }) {
             <button className="ghost-btn" type="button" onClick={() => onSignup({ email: loginEmail, password })} disabled={loading}>Create account</button>
             <button className="ghost-btn" type="button" onClick={onGoogle} disabled={loading || !isSupabaseConfigured}>Continue with Google</button>
           </div>
-          <p className="login-note">Supabase Auth is active when the connection pill says Supabase connected. Google also needs to be enabled in your Supabase Auth provider settings.</p>
+          <p className="login-note">Access is limited to approved Vision Forge Studio workspace members.</p>
         </form>
       </div>
     </section>
@@ -984,7 +1022,7 @@ function Topbar({ state, patch, openProjectModal, openTaskModal, onNotificationC
       <div>
         <span className="eyebrow">Vision Forge Studio</span>
         <h1>{title}</h1>
-        <span className={`connection-pill ${isSupabaseConfigured ? "connected" : ""}`}>{isSupabaseConfigured ? "Supabase connected" : "Local demo mode"}</span>
+        <span className={`connection-pill ${isSupabaseConfigured ? "connected" : ""}`}>{isSupabaseConfigured ? "Live workspace" : "Preview mode"}</span>
       </div>
       <div className="topbar-actions">
         <div className="avatar-stack">
@@ -1402,8 +1440,8 @@ function ProjectForm({ project, onSubmit }) {
       <form onSubmit={event => { event.preventDefault(); onSubmit(new FormData(event.currentTarget), [...event.currentTarget.attachments.files]); }}>
         <Field label="Name"><input name="name" required defaultValue={project?.name || ""} placeholder="New client portal" /></Field>
         <Field label="Description"><textarea name="description" required defaultValue={project?.description || ""} placeholder="What this project is responsible for" /></Field>
-        <Field label="Attachments"><input name="attachments" type="file" multiple /></Field>
-        <p className="login-note">{project ? `Existing files: ${attachmentNames(project.attachments) || "none"}. New uploads will be added to the project.` : "The demo records selected file names. Supabase Storage will handle real uploads when the backend is connected."}</p>
+        <Field label="Attachments"><input name="attachments" type="file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip" /></Field>
+        <p className="login-note">{project ? `Existing files: ${attachmentNames(project.attachments) || "none"}. New uploads will be added to the project.` : "Add project images or documents for your team to review and download."}</p>
         <Field label="Start date"><input name="startDate" type="date" required defaultValue={project?.startDate || ""} /></Field>
         <Field label="Deadline"><input name="deadline" type="date" required defaultValue={project?.deadline || ""} /></Field>
         <Field label="Project status"><select name="status" defaultValue={project?.status || "active"}>{projectStatuses.map(status => <option key={status.id} value={status.id}>{status.label}</option>)}</select></Field>
@@ -1495,6 +1533,15 @@ function TaskDetail({ taskId, state, helpers, addComment, setModal, downloadAtta
   const task = state.tasks.find(item => item.id === taskId);
   const [text, setText] = useState("");
   const [mentionOpen, setMentionOpen] = useState(false);
+  const textareaRef = useRef(null);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 180)}px`;
+  }, [text]);
+
   if (!task) return null;
   const project = helpers.getProject(task.projectId);
   const mentionMatches = state.users.filter(user => user.name.toLowerCase().includes(text.split("@").pop()?.toLowerCase() || ""));
@@ -1529,9 +1576,9 @@ function TaskDetail({ taskId, state, helpers, addComment, setModal, downloadAtta
         <div className="chat-panel">
           <div className="chat-head"><strong>Comments</strong><span>{task.comments.length}</span></div>
           <div className="comment-board chat-board">{task.comments.length ? task.comments.map(comment => <Comment key={`${comment.by}-${comment.date}-${comment.text}`} comment={comment} />) : <div className="chat-empty">No comments yet.</div>}</div>
-          <form className="chat-compose" onSubmit={event => { event.preventDefault(); addComment(task.id, text); setText(""); setMentionOpen(false); }}>
+          <form className="chat-compose" onSubmit={async event => { event.preventDefault(); const saved = await addComment(task.id, text); if (saved) { setText(""); setMentionOpen(false); } }}>
             <div className="mention-wrap">
-              <textarea value={text} placeholder="Type @ to mention a teammate" onChange={event => { setText(event.target.value); setMentionOpen(event.target.value.includes("@")); }} />
+              <textarea ref={textareaRef} rows="1" value={text} placeholder="Type @ to mention a teammate" onChange={event => { setText(event.target.value); setMentionOpen(event.target.value.includes("@")); }} />
               {mentionOpen && (
                 <div className="mention-menu open">
                   {mentionMatches.slice(0, 5).map(user => (
@@ -1550,7 +1597,7 @@ function TaskDetail({ taskId, state, helpers, addComment, setModal, downloadAtta
   );
 }
 
-function ProjectDetail({ projectId, state, helpers, updateProjectStatus, openTask, setModal }) {
+function ProjectDetail({ projectId, state, helpers, updateProjectStatus, openTask, setModal, downloadAttachment }) {
   const project = helpers.getProject(projectId);
   if (!project) return null;
   const tasks = state.tasks.filter(task => task.projectId === project.id);
@@ -1563,7 +1610,10 @@ function ProjectDetail({ projectId, state, helpers, updateProjectStatus, openTas
       <p className="subtle">{project.description}</p>
       <div className="timeline" style={{ marginTop: 16 }}>
         <div className="timeline-item"><strong>Schedule</strong><span className="muted-small">Start {formatDate(project.startDate)} / Deadline {formatDate(project.deadline)}</span></div>
-        <div className="timeline-item"><strong>Attachments</strong><span className="muted-small">{attachmentNames(project.attachments) || "No attachments yet"}</span></div>
+        <div className="timeline-item">
+          <strong>Attachments</strong>
+          {project.attachments?.length ? <AttachmentGallery attachments={project.attachments} onDownload={downloadAttachment} /> : <span className="muted-small">No attachments yet</span>}
+        </div>
       </div>
       <Field label="Project status">
         <select value={project.status || "active"} onChange={event => updateProjectStatus(project.id, event.target.value)}>
@@ -1652,6 +1702,51 @@ function UserAvatar({ user, large = false }) {
     : <span className={`user-photo placeholder ${large ? "large" : ""}`}>{user?.initials || initialsFromName(user?.displayName || user?.name || "User")}</span>;
 }
 
+function AttachmentGallery({ attachments = [], onDownload }) {
+  return (
+    <div className="attachment-gallery">
+      {attachments.map(attachment => (
+        <AttachmentPreview attachment={attachment} onDownload={onDownload} key={attachment.id || attachment.path || attachment.name} />
+      ))}
+    </div>
+  );
+}
+
+function AttachmentPreview({ attachment, onDownload }) {
+  const signedUrl = useSignedAttachmentUrl(attachment);
+  const isImage = String(attachment.type || "").startsWith("image/");
+  return (
+    <button type="button" className={`attachment-preview ${isImage ? "is-image" : ""}`} onClick={() => onDownload(attachment)}>
+      {isImage && signedUrl ? <img src={signedUrl} alt={attachment.name} /> : <span className="attachment-file-icon">{fileExtension(attachment.name)}</span>}
+      <span>{attachment.name}</span>
+      <small>{formatFileSize(attachment.size)}</small>
+    </button>
+  );
+}
+
+function useSignedAttachmentUrl(attachment) {
+  const [url, setUrl] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    if (!attachment?.bucket || !attachment?.path || !supabase) {
+      setUrl("");
+      return undefined;
+    }
+
+    supabase.storage.from(attachment.bucket).createSignedUrl(attachment.path, 300).then(({ data, error }) => {
+      if (!active) return;
+      setUrl(error ? "" : data?.signedUrl || "");
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [attachment?.bucket, attachment?.path]);
+
+  return url;
+}
+
 function ModalHeader({ title, eyebrow }) {
   const onClose = useContext(CloseModalContext);
   return (
@@ -1734,7 +1829,7 @@ async function upsertSupabaseProfile(authUser) {
     photo: metadata.avatar_url || "",
     status: "Active",
     lastLogin: "Just now",
-    activity: ["Signed in with Supabase Auth."],
+    activity: ["Signed in to the workspace."],
     role,
     groupIds: [],
     initials: initialsFromName(displayName),
@@ -1758,7 +1853,7 @@ function profileRowToUser(row) {
     photo: row.photo_url || "",
     status: row.status || "Active",
     lastLogin: row.last_login_at ? new Date(row.last_login_at).toLocaleString() : "Just now",
-    activity: ["Signed in with Supabase Auth."],
+    activity: ["Signed in to the workspace."],
     role: row.role || "User",
     groupIds: [],
     initials: initialsFromName(displayName),
@@ -1776,6 +1871,7 @@ async function loadSupabaseWorkspace() {
     projectsResult,
     tasksResult,
     taskAssigneesResult,
+    commentsResult,
   ] = await Promise.all([
     supabase.from("profiles").select("*").order("created_at", { ascending: true }),
     supabase.from("groups").select("*").order("created_at", { ascending: true }),
@@ -1783,6 +1879,7 @@ async function loadSupabaseWorkspace() {
     supabase.from("projects").select("*").order("created_at", { ascending: true }),
     supabase.from("tasks").select("*").order("created_at", { ascending: true }),
     supabase.from("task_assignees").select("*"),
+    supabase.from("comments").select("*").order("created_at", { ascending: true }),
   ]);
 
   const firstError = [
@@ -1792,6 +1889,7 @@ async function loadSupabaseWorkspace() {
     projectsResult.error,
     tasksResult.error,
     taskAssigneesResult.error,
+    commentsResult.error,
   ].find(Boolean);
 
   if (firstError) {
@@ -1813,6 +1911,13 @@ async function loadSupabaseWorkspace() {
     taskAssignees.set(assignee.task_id, profileIds);
   }
 
+  const taskComments = new Map();
+  for (const comment of commentsResult.data || []) {
+    const comments = taskComments.get(comment.task_id) || [];
+    comments.push(commentRowToComment(comment, profilesResult.data || []));
+    taskComments.set(comment.task_id, comments);
+  }
+
   return {
     loaded: true,
     users: (profilesResult.data || []).map(row => ({ ...profileRowToUser(row), groupIds: userGroupIds.get(row.id) || [] })),
@@ -1823,7 +1928,7 @@ async function loadSupabaseWorkspace() {
       memberIds: (groupMembersResult.data || []).filter(member => member.group_id === row.id).map(member => member.profile_id),
     })),
     projects: (projectsResult.data || []).map(projectRowToProject),
-    tasks: (tasksResult.data || []).map(row => taskRowToTask(row, taskAssignees.get(row.id) || [])),
+    tasks: (tasksResult.data || []).map(row => taskRowToTask(row, taskAssignees.get(row.id) || [], taskComments.get(row.id) || [])),
   };
 }
 
@@ -1838,6 +1943,7 @@ async function saveSupabaseProject(project, userId) {
     start_date: project.startDate || null,
     deadline: project.deadline || null,
     color: project.color || randomColor(),
+    attachments: project.attachments || [],
     created_by: isUuid(userId) ? userId : null,
     updated_at: new Date().toISOString(),
   });
@@ -1875,6 +1981,20 @@ async function saveSupabaseTask(task, userId) {
   return assigneeError;
 }
 
+async function saveSupabaseComment(taskId, comment) {
+  if (!supabase) return null;
+
+  const { error } = await supabase.from("comments").insert({
+    id: comment.id,
+    task_id: taskId,
+    profile_id: isUuid(comment.userId) ? comment.userId : null,
+    body: comment.text,
+    created_at: new Date().toISOString(),
+  });
+
+  return error;
+}
+
 function projectRowToProject(row) {
   return {
     id: row.id,
@@ -1884,11 +2004,11 @@ function projectRowToProject(row) {
     startDate: row.start_date || "",
     deadline: row.deadline || "",
     color: row.color || randomColor(),
-    attachments: [],
+    attachments: row.attachments || [],
   };
 }
 
-function taskRowToTask(row, assignees) {
+function taskRowToTask(row, assignees, comments = []) {
   return {
     id: row.id,
     projectId: row.project_id,
@@ -1899,8 +2019,20 @@ function taskRowToTask(row, assignees) {
     priority: row.priority || "Medium",
     deadline: row.deadline || "",
     assignees,
-    comments: [],
+    comments,
     attachments: row.attachments || [],
+  };
+}
+
+function commentRowToComment(row, profiles = []) {
+  const profile = profiles.find(item => item.id === row.profile_id);
+  const name = profile?.display_name || profile?.email?.split("@")[0] || "Team member";
+  return {
+    id: row.id,
+    by: name,
+    userId: row.profile_id || "",
+    text: row.body || "",
+    date: row.created_at ? normalizeDate(row.created_at) : normalizeDate(new Date()),
   };
 }
 
@@ -1965,6 +2097,11 @@ function formatFileSize(bytes) {
 
 function attachmentNames(attachments = []) {
   return attachments.map(item => typeof item === "string" ? item : `${item.name} (${formatFileSize(item.size)})`).join(", ");
+}
+
+function fileExtension(name = "") {
+  const extension = String(name).split(".").pop();
+  return extension && extension !== name ? extension.slice(0, 4).toUpperCase() : "FILE";
 }
 
 function escapeHtml(value) {

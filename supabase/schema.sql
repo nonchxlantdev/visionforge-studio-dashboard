@@ -40,6 +40,7 @@ create table if not exists public.projects (
   start_date date,
   deadline date,
   color text,
+  attachments jsonb not null default '[]'::jsonb,
   created_by uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
