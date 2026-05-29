@@ -195,7 +195,7 @@ button:disabled {
 .status-tab,
 .tab-btn,
 .view-toggle button {
-  min-height: 40px;
+  min-height: 36px;
   border-radius: 8px;
   transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
 }
@@ -360,7 +360,7 @@ button:disabled {
 
 .main {
   min-width: 0;
-  padding: 22px clamp(18px, 3vw, 36px) 34px;
+  padding: 16px clamp(14px, 2vw, 24px) 22px;
 }
 
 .topbar {
@@ -370,9 +370,9 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  margin: -22px calc(clamp(18px, 3vw, 36px) * -1) 22px;
-  padding: 18px clamp(18px, 3vw, 36px);
+  gap: 12px;
+  margin: -16px calc(clamp(14px, 2vw, 24px) * -1) 16px;
+  padding: 12px clamp(14px, 2vw, 24px);
   border-bottom: 1px solid rgba(223, 228, 235, 0.8);
   background: rgba(248, 250, 252, 0.86);
   backdrop-filter: blur(14px);
@@ -380,15 +380,15 @@ button:disabled {
 
 .topbar h1 {
   margin: 0;
-  font-size: clamp(26px, 3vw, 38px);
+  font-size: clamp(24px, 2.4vw, 34px);
   letter-spacing: 0;
 }
 
 .connection-pill {
   display: inline-flex;
   align-items: center;
-  min-height: 24px;
-  margin-top: 7px;
+  min-height: 22px;
+  margin-top: 5px;
   border-radius: 999px;
   background: #eef1f5;
   color: var(--muted);
@@ -405,7 +405,7 @@ button:disabled {
 .topbar-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .avatar-stack {
@@ -438,11 +438,11 @@ button:disabled {
 }
 
 .tool-btn {
-  padding: 0 14px;
+  padding: 0 12px;
 }
 
 .ghost-btn {
-  padding: 0 13px;
+  padding: 0 12px;
 }
 
 .icon-btn {
@@ -451,7 +451,7 @@ button:disabled {
 
 .notification-btn {
   position: relative;
-  min-height: 40px;
+  min-height: 36px;
   border-radius: 8px;
   padding: 0 10px 0 13px;
 }
@@ -696,19 +696,19 @@ button:disabled {
 
 .dashboard-layout {
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
-  gap: 18px;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 14px;
   align-items: start;
 }
 
 .project-rail {
   position: sticky;
-  top: 88px;
-  max-height: calc(100vh - 112px);
+  top: 74px;
+  max-height: calc(100vh - 94px);
   min-width: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  gap: 12px;
+  gap: 10px;
   overflow: hidden;
 }
 
@@ -735,21 +735,21 @@ button:disabled {
 
 .project-rail-list {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   min-height: 0;
   overflow-y: auto;
   padding: 2px 4px 2px 0;
 }
 
 .project-rail-item {
-  min-height: 82px;
+  min-height: 68px;
   display: grid;
-  gap: 9px;
+  gap: 7px;
   align-content: center;
   border-color: var(--line);
   background: #fff;
   color: #334154;
-  padding: 12px;
+  padding: 10px;
   text-align: left;
   box-shadow: 0 8px 20px rgba(8, 27, 51, 0.04);
 }
@@ -816,14 +816,14 @@ button:disabled {
 .toolbar {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) auto auto;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
-  margin: 20px 0;
+  margin: 12px 0 14px;
 }
 
 .search-box input {
-  min-height: 42px;
-  padding: 0 14px;
+  min-height: 38px;
+  padding: 0 12px;
 }
 
 .view-toggle {
@@ -849,21 +849,21 @@ button:disabled {
 
 .board {
   display: grid;
-  grid-template-columns: repeat(4, minmax(250px, 1fr));
-  gap: 18px;
+  grid-template-columns: repeat(4, minmax(220px, 1fr));
+  gap: 14px;
   align-items: start;
 }
 
 .board-scroll {
-  max-height: calc(100vh - 172px);
-  min-height: 560px;
+  max-height: calc(100vh - 142px);
+  min-height: 0;
   overflow: auto;
-  padding: 0 2px 12px 0;
+  padding: 0 2px 8px 0;
 }
 
 .board-full {
-  min-width: 1080px;
-  grid-template-columns: repeat(4, minmax(250px, 1fr));
+  min-width: 920px;
+  grid-template-columns: repeat(4, minmax(220px, 1fr));
 }
 
 .column {
@@ -875,7 +875,7 @@ button:disabled {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   padding: 0 2px;
 }
 
@@ -910,11 +910,11 @@ button:disabled {
 }
 
 .dropzone {
-  min-height: 500px;
+  min-height: 360px;
   display: grid;
   align-content: start;
-  gap: 12px;
-  padding: 8px;
+  gap: 10px;
+  padding: 6px;
   border: 1px dashed transparent;
   border-radius: 8px;
   transition: background 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease;
@@ -960,7 +960,7 @@ button:disabled {
   border-radius: 8px;
   background: #fff;
   box-shadow: 0 8px 24px rgba(8, 27, 51, 0.06);
-  padding: 14px;
+  padding: 12px;
   cursor: grab;
   transform: translateY(0) scale(1);
   transition: transform 0.22s ease, box-shadow 0.22s ease, opacity 0.22s ease, filter 0.22s ease, background 0.22s ease;
@@ -1012,8 +1012,8 @@ button:disabled {
 }
 
 .task-card h3 {
-  margin: 12px 0 8px;
-  font-size: 15px;
+  margin: 10px 0 7px;
+  font-size: 14px;
   line-height: 1.35;
 }
 
@@ -1028,8 +1028,8 @@ button:disabled {
 }
 
 .tag {
-  max-width: 148px;
-  padding: 5px 8px;
+  max-width: 128px;
+  padding: 4px 7px;
   border: 1px solid var(--line);
   color: #405064;
   overflow: hidden;
@@ -1038,7 +1038,7 @@ button:disabled {
 }
 
 .priority {
-  padding: 5px 8px;
+  padding: 4px 7px;
 }
 
 .priority.high {
@@ -1076,7 +1076,7 @@ button:disabled {
 }
 
 .progress-row {
-  margin: 12px 0;
+  margin: 10px 0;
   color: var(--muted);
   font-size: 11px;
 }
@@ -1084,13 +1084,13 @@ button:disabled {
 .project-chip {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 12px;
-  padding: 10px;
+  gap: 7px;
+  margin-top: 10px;
+  padding: 8px;
   border-radius: 8px;
   background: #f8fafc;
   color: #405064;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -2115,7 +2115,7 @@ button:disabled {
   }
 
   .dropzone {
-    min-height: 420px;
+    min-height: 340px;
   }
 }
 
@@ -2230,7 +2230,7 @@ button:disabled {
   }
 
   .main {
-    padding: 16px 12px 28px;
+    padding: 14px 10px 22px;
   }
 
   .topbar-actions,
