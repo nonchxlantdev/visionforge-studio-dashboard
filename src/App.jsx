@@ -192,7 +192,9 @@ export default function App() {
           users: workspace.users.length ? workspace.users : current.users,
           groups: workspace.loaded && workspace.groups.length ? workspace.groups : current.groups,
           updates: payload?.update ? [payload.update, ...current.updates] : current.updates,
-          notifications: payload?.update ? [payload.update, ...current.notifications] : current.notifications,
+          notifications: workspace.loaded && workspace.notifications.length
+            ? mergeNotifications(workspace.notifications, payload?.update ? [payload.update] : current.notifications)
+            : payload?.update ? [payload.update, ...current.notifications] : current.notifications,
         }));
       })
       .subscribe(status => {
@@ -237,6 +239,7 @@ export default function App() {
       groups: workspace.loaded && workspace.groups.length ? workspace.groups : current.groups,
       projects: workspace.loaded ? workspace.projects : current.projects,
       tasks: workspace.loaded ? workspace.tasks : current.tasks,
+      notifications: workspace.loaded ? workspace.notifications : current.notifications,
     }));
   }
 
@@ -326,6 +329,11 @@ export default function App() {
       updates: [update, ...current.updates],
       notifications: [update, ...current.notifications],
     }));
+    if (isSupabaseConfigured && supabase) {
+      saveSupabaseNotifications(update, state.users, actor.id).then(error => {
+        if (error) console.warn("Notification save failed:", error.message);
+      });
+    }
     workspaceChannelRef.current?.send({
       type: "broadcast",
       event: "workspace-update",
@@ -356,6 +364,11 @@ export default function App() {
       notificationOpen: false,
       notifications: current.notifications.map(item => item.id === notification.id ? { ...item, read: true } : item),
     }));
+    if (isSupabaseConfigured && supabase) {
+      markSupabaseNotificationsRead([notification.id]).then(error => {
+        if (error) console.warn("Notification read save failed:", error.message);
+      });
+    }
     if (notification.targetType === "task") openTask(notification.targetId);
     if (notification.targetType === "project") {
       patch({ activeView: "projects" });
@@ -1031,11 +1044,19 @@ function Topbar({ state, patch, openProjectModal, openTaskModal, onNotificationC
         <div className="notification-wrap" ref={notificationRef}>
           <button
             className="notification-btn"
-            onClick={() => patch(current => ({
-              ...current,
-              notificationOpen: !current.notificationOpen,
-              notifications: current.notificationOpen ? current.notifications : current.notifications.map(item => ({ ...item, read: true })),
-            }))}
+            onClick={() => {
+              const unreadIds = state.notifications.filter(item => !item.read).map(item => item.id);
+              patch(current => ({
+                ...current,
+                notificationOpen: !current.notificationOpen,
+                notifications: current.notificationOpen ? current.notifications : current.notifications.map(item => ({ ...item, read: true })),
+              }));
+              if (!state.notificationOpen && isSupabaseConfigured && supabase && unreadIds.length) {
+                markSupabaseNotificationsRead(unreadIds).then(error => {
+                  if (error) console.warn("Notification read save failed:", error.message);
+                });
+              }
+            }}
           >
             <span>Notifications</span>
             <strong>{unread.length}</strong>
@@ -1879,7 +1900,7 @@ function profileRowToUser(row) {
 }
 
 async function loadSupabaseWorkspace() {
-  const emptyWorkspace = { loaded: false, users: [], groups: [], projects: [], tasks: [] };
+  const emptyWorkspace = { loaded: false, users: [], groups: [], projects: [], tasks: [], notifications: [] };
   if (!supabase) return emptyWorkspace;
 
   const [
@@ -1890,6 +1911,7 @@ async function loadSupabaseWorkspace() {
     tasksResult,
     taskAssigneesResult,
     commentsResult,
+    notificationsResult,
   ] = await Promise.all([
     supabase.from("profiles").select("*").order("created_at", { ascending: true }),
     supabase.from("groups").select("*").order("created_at", { ascending: true }),
@@ -1898,6 +1920,7 @@ async function loadSupabaseWorkspace() {
     supabase.from("tasks").select("*").order("created_at", { ascending: true }),
     supabase.from("task_assignees").select("*"),
     supabase.from("comments").select("*").order("created_at", { ascending: true }),
+    supabase.from("notifications").select("*").order("created_at", { ascending: false }).limit(50),
   ]);
 
   const firstError = [
@@ -1908,6 +1931,7 @@ async function loadSupabaseWorkspace() {
     tasksResult.error,
     taskAssigneesResult.error,
     commentsResult.error,
+    notificationsResult.error,
   ].find(Boolean);
 
   if (firstError) {
@@ -1947,6 +1971,7 @@ async function loadSupabaseWorkspace() {
     })),
     projects: (projectsResult.data || []).map(projectRowToProject),
     tasks: (tasksResult.data || []).map(row => taskRowToTask(row, taskAssignees.get(row.id) || [], taskComments.get(row.id) || [])),
+    notifications: (notificationsResult.data || []).map(notificationRowToUpdate),
   };
 }
 
@@ -2013,6 +2038,43 @@ async function saveSupabaseTaskStatus(taskId, status) {
   return error;
 }
 
+async function saveSupabaseNotifications(update, users, actorId) {
+  if (!supabase) return null;
+
+  const recipients = (users || [])
+    .map(user => user.id)
+    .filter(isUuid);
+
+  const rows = [...new Set(recipients)].map(profileId => ({
+    profile_id: profileId,
+    title: update.title,
+    detail: update.detail,
+    target_type: update.targetType || null,
+    target_id: isUuid(update.targetId) ? update.targetId : null,
+    read: profileId === actorId,
+    created_at: new Date().toISOString(),
+  }));
+
+  if (!rows.length) return null;
+
+  const { error } = await supabase.from("notifications").insert(rows);
+  return error;
+}
+
+async function markSupabaseNotificationsRead(notificationIds) {
+  if (!supabase) return null;
+
+  const ids = (notificationIds || []).filter(isUuid);
+  if (!ids.length) return null;
+
+  const { error } = await supabase
+    .from("notifications")
+    .update({ read: true })
+    .in("id", ids);
+
+  return error;
+}
+
 async function saveSupabaseComment(taskId, comment) {
   if (!supabase) return null;
 
@@ -2066,6 +2128,32 @@ function commentRowToComment(row, profiles = []) {
     text: row.body || "",
     date: row.created_at ? normalizeDate(row.created_at) : normalizeDate(new Date()),
   };
+}
+
+function notificationRowToUpdate(row) {
+  const date = row.created_at ? normalizeDate(row.created_at) : normalizeDate(new Date());
+  return {
+    id: row.id,
+    title: row.title,
+    detail: row.detail || "",
+    date,
+    time: date === normalizeDate(new Date()) ? "Today" : formatDate(date),
+    read: Boolean(row.read),
+    targetType: row.target_type || "",
+    targetId: row.target_id || "",
+  };
+}
+
+function mergeNotifications(primary, secondary) {
+  const seen = new Set();
+  return [...primary, ...secondary].filter(item => {
+    if (!item?.id) return false;
+    const key = `${item.title}|${item.detail}|${item.targetType}|${item.targetId}`;
+    if (seen.has(item.id) || seen.has(key)) return false;
+    seen.add(item.id);
+    seen.add(key);
+    return true;
+  });
 }
 
 function normalizeUser(user) {

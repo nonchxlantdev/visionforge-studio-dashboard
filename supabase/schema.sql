@@ -106,5 +106,6 @@ create policy "authenticated can manage projects" on public.projects for all to 
 create policy "authenticated can manage tasks" on public.tasks for all to authenticated using (true) with check (true);
 create policy "authenticated can manage assignees" on public.task_assignees for all to authenticated using (true) with check (true);
 create policy "authenticated can manage comments" on public.comments for all to authenticated using (true) with check (true);
+create policy "authenticated can create notifications" on public.notifications for insert to authenticated with check (true);
 create policy "users can read their notifications" on public.notifications for select to authenticated using (profile_id = auth.uid());
 create policy "users can update their notifications" on public.notifications for update to authenticated using (profile_id = auth.uid());
