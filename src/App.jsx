@@ -1145,7 +1145,8 @@ function DashboardBoard({ state, helpers, patch, setModal, openTask, moveTask })
   const activeProjectId = state.activeProjectId && projects.some(project => project.id === state.activeProjectId)
     ? state.activeProjectId
     : projects[0]?.id || "";
-  const tasks = helpers.visibleTasks().filter(task => {
+  const visibleTasks = helpers.visibleTasks();
+  const tasks = visibleTasks.filter(task => {
     const matchesProject = !activeProjectId || task.projectId === activeProjectId;
     const query = state.search.trim().toLowerCase();
     const matchesSearch = !query || `${task.title} ${task.type} ${task.description}`.toLowerCase().includes(query);
@@ -1157,34 +1158,53 @@ function DashboardBoard({ state, helpers, patch, setModal, openTask, moveTask })
   }, [activeProjectId]);
 
   return (
-    <>
-      {projects.length ? (
-        <nav className="project-tabs" aria-label="Projects">
-          {projects.map(project => (
-            <button key={project.id} className={`tab-btn ${activeProjectId === project.id ? "active" : ""}`} onClick={() => patch({ activeProjectId: project.id })}>
-              <span className="project-dot" style={{ background: project.color }} />
-              <span>{project.name}</span>
-            </button>
-          ))}
-        </nav>
-      ) : <div className="empty-state">No active projects yet. Create your first project to start tracking work.</div>}
-      <div className="toolbar">
-        <div className="search-box">
-          <input value={state.search} placeholder="Search task" onChange={event => patch({ search: event.target.value })} />
+    <div className="dashboard-layout">
+      <aside className="project-rail" aria-label="Projects">
+        <div className="project-rail-head">
+          <span>Projects</span>
+          <button className="icon-mini" type="button" onClick={() => setModal({ type: "new-project" })} aria-label="Add project">+</button>
         </div>
-        <button className="ghost-btn" onClick={() => patch({ activeView: "projects" })}>Project & Tasks</button>
-        <button className="ghost-btn" disabled={!state.projects.length} onClick={() => setModal({ type: "new-task" })}>Create task</button>
-      </div>
-      {projects.length ? (
-        <LayoutGroup>
-          <div className="board board-full">
-            {statuses.map(status => (
-              <TaskColumn key={status.id} status={status} tasks={tasks.filter(task => task.status === status.id)} state={state} helpers={helpers} openTask={openTask} moveTask={moveTask} />
-            ))}
+        {projects.length ? (
+          <nav className="project-rail-list">
+            {projects.map(project => {
+              const projectTasks = visibleTasks.filter(task => task.projectId === project.id);
+              const complete = projectTasks.filter(task => task.status === "completed").length;
+              const progress = projectTasks.length ? Math.round((complete / projectTasks.length) * 100) : 0;
+              return (
+                <button key={project.id} className={`project-rail-item ${activeProjectId === project.id ? "active" : ""}`} onClick={() => patch({ activeProjectId: project.id })}>
+                  <span className="project-rail-title">
+                    <span className="project-dot" style={{ background: project.color }} />
+                    <strong>{project.name}</strong>
+                  </span>
+                  <span className="project-rail-meta"><span>{projectTasks.length} tasks</span><span>{progress}%</span></span>
+                  <span className="rail-progress"><span style={{ width: `${progress}%`, background: project.color }} /></span>
+                </button>
+              );
+            })}
+          </nav>
+        ) : <div className="empty-state">No active projects yet. Create your first project to start tracking work.</div>}
+      </aside>
+      <section className="board-panel">
+        <div className="toolbar">
+          <div className="search-box">
+            <input value={state.search} placeholder="Search task" onChange={event => patch({ search: event.target.value })} />
           </div>
-        </LayoutGroup>
-      ) : null}
-    </>
+          <button className="ghost-btn" onClick={() => patch({ activeView: "projects" })}>Project & Tasks</button>
+          <button className="ghost-btn" disabled={!state.projects.length} onClick={() => setModal({ type: "new-task" })}>Create task</button>
+        </div>
+        {projects.length ? (
+          <LayoutGroup>
+            <div className="board-scroll">
+              <div className="board board-full">
+                {statuses.map(status => (
+                  <TaskColumn key={status.id} status={status} tasks={tasks.filter(task => task.status === status.id)} state={state} helpers={helpers} openTask={openTask} moveTask={moveTask} />
+                ))}
+              </div>
+            </div>
+          </LayoutGroup>
+        ) : null}
+      </section>
+    </div>
   );
 }
 
