@@ -367,10 +367,8 @@ export default function App() {
   async function moveTask(taskId, status) {
     const task = state.tasks.find(item => item.id === taskId);
     if (!task || task.status === "completed" || task.status === status) return;
-    const updatedTask = { ...task, status };
-
     if (isSupabaseConfigured && supabase) {
-      const error = await saveSupabaseTask(updatedTask, state.user.id);
+      const error = await saveSupabaseTaskStatus(taskId, status);
       if (error) {
         alert(`Task status save failed: ${error.message}`);
         return;
@@ -1999,6 +1997,20 @@ async function saveSupabaseTask(task, userId) {
 
   const { error: assigneeError } = await supabase.from("task_assignees").insert(assigneeRows);
   return assigneeError;
+}
+
+async function saveSupabaseTaskStatus(taskId, status) {
+  if (!supabase) return null;
+
+  const { error } = await supabase
+    .from("tasks")
+    .update({
+      status,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", taskId);
+
+  return error;
 }
 
 async function saveSupabaseComment(taskId, comment) {
